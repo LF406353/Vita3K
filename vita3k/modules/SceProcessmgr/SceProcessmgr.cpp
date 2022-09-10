@@ -18,6 +18,7 @@
 #include "SceProcessmgr.h"
 
 #include <io/functions.h>
+#include <kernel/state.h>
 #include <rtc/rtc.h>
 
 #include <util/safe_time.h>
@@ -59,8 +60,8 @@ EXPORT(int, _sceKernelExitProcessForUser) {
 }
 
 EXPORT(int, _sceKernelGetTimer5Reg, Ptr<uint64_t> *timer) {
-    *timer = alloc<uint64_t>(host.mem, "timer5reg");
-    *(*timer).get(host.mem) = rtc_get_ticks(host.kernel.base_tick.tick);
+    *timer = alloc<uint64_t>(emuenv.mem, "timer5reg");
+    *(*timer).get(emuenv.mem) = rtc_get_ticks(emuenv.kernel.base_tick.tick);
     return SCE_KERNEL_OK;
 }
 
@@ -93,7 +94,7 @@ EXPORT(int, sceKernelGetProcessName) {
 }
 
 EXPORT(Ptr<uint32_t>, sceKernelGetProcessParam, void *args) {
-    return host.kernel.process_param;
+    return emuenv.kernel.process_param;
 }
 
 EXPORT(int, sceKernelGetProcessTimeCore) {
@@ -117,15 +118,15 @@ EXPORT(int, sceKernelGetRemoteProcessTime) {
 }
 
 EXPORT(int, sceKernelGetStderr) {
-    return open_file(host.io, "tty0:", SCE_O_WRONLY, host.pref_path, export_name);
+    return open_file(emuenv.io, "tty0:", SCE_O_WRONLY, emuenv.pref_path, export_name);
 }
 
 EXPORT(int, sceKernelGetStdin) {
-    return open_file(host.io, "tty0:", SCE_O_RDONLY, host.pref_path, export_name);
+    return open_file(emuenv.io, "tty0:", SCE_O_RDONLY, emuenv.pref_path, export_name);
 }
 
 EXPORT(int, sceKernelGetStdout) {
-    return open_file(host.io, "tty0:", SCE_O_WRONLY, host.pref_path, export_name);
+    return open_file(emuenv.io, "tty0:", SCE_O_WRONLY, emuenv.pref_path, export_name);
 }
 
 EXPORT(int, sceKernelIsCDialogAvailable) {
@@ -137,11 +138,11 @@ EXPORT(int, sceKernelIsGameBudget) {
 }
 
 EXPORT(VitaTime, sceKernelLibcClock) {
-    return static_cast<VitaTime>(rtc_get_ticks(host.kernel.base_tick.tick) - host.kernel.start_tick);
+    return static_cast<VitaTime>(rtc_get_ticks(emuenv.kernel.base_tick.tick) - emuenv.kernel.start_tick);
 }
 
 EXPORT(int, sceKernelLibcGettimeofday, VitaTimeval *timeAddr, VitaTimezone *tzAddr) {
-    const auto ticks = rtc_get_ticks(host.kernel.base_tick.tick) - RTC_OFFSET;
+    const auto ticks = rtc_get_ticks(emuenv.kernel.base_tick.tick) - RTC_OFFSET;
     if (timeAddr != nullptr) {
         timeAddr->tv_sec = static_cast<std::uint32_t>(ticks / VITA_CLOCKS_PER_SEC);
         timeAddr->tv_usec = ticks % VITA_CLOCKS_PER_SEC;
@@ -158,14 +159,18 @@ EXPORT(int, sceKernelLibcGettimeofday, VitaTimeval *timeAddr, VitaTimezone *tzAd
     return 0;
 }
 
-EXPORT(int, sceKernelLibcGmtime_r) {
-    return UNIMPLEMENTED();
+EXPORT(Ptr<struct tm>, sceKernelLibcGmtime_r, const VitaTime *time, Ptr<struct tm> date) {
+    const time_t plat_time = *time;
+
+    SAFE_GMTIME(&plat_time, date.get(emuenv.mem));
+
+    return date;
 }
 
 EXPORT(Ptr<struct tm>, sceKernelLibcLocaltime_r, const VitaTime *time, Ptr<struct tm> date) {
     const time_t plat_time = *time;
 
-    SAFE_LOCALTIME(&plat_time, date.get(host.mem));
+    SAFE_LOCALTIME(&plat_time, date.get(emuenv.mem));
 
     return date;
 }
@@ -175,7 +180,7 @@ EXPORT(int, sceKernelLibcMktime) {
 }
 
 EXPORT(VitaTime, sceKernelLibcTime, VitaTime *time) {
-    const auto secs = (rtc_get_ticks(host.kernel.base_tick.tick) - RTC_OFFSET) / VITA_CLOCKS_PER_SEC;
+    const auto secs = (rtc_get_ticks(emuenv.kernel.base_tick.tick) - RTC_OFFSET) / VITA_CLOCKS_PER_SEC;
 
     if (time) {
         *time = static_cast<VitaTime>(secs);
@@ -207,7 +212,7 @@ EXPORT(int, sceKernelUnregisterProcessTerminationCallback) {
 EXPORT(int, sceLibKernel_9F793F84) {
     // Gets a version from the process' SceKernelProcessParam. Used for PSN Auth in SceShell.
     auto p_process_param = CALL_EXPORT(sceKernelGetProcessParam, nullptr);
-    auto process_param = p_process_param.get(host.mem);
+    auto process_param = p_process_param.get(emuenv.mem);
     if (process_param && (process_param[1] == '2PSP') && (process_param[2] != 0)) {
         return process_param[3];
     } else {

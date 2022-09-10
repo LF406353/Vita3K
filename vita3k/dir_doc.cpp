@@ -11,7 +11,7 @@
  *
  * @brief Source code files specific to the Vita3K emulator
  *
- * This folder is divided into different sub-folders that cover specific part/features of the emulatior.
+ * This folder is divided into different sub-folders that cover specific part/features of the emulator.
  */
 
 /**
@@ -68,6 +68,12 @@
  */
 
 /**
+ * @dir vita3k/emuenv
+ *
+ * @brief Definitions and basic data structures to construct an emulated PS Vita environment
+ */
+
+/**
  * @dir vita3k/disasm
  *
  * @brief ARM game code disassembler (used for the "Watch code" debugging option)
@@ -112,7 +118,7 @@
 /**
  * @dir vita3k/host
  *
- * @brief Essential code needed to emulate the PS Vita OS
+ * @brief Host operating system abstraction layer
  */
 
 /**
@@ -172,6 +178,12 @@
  * @dir vita3k/np
  *
  * @brief PS Vita `Np` trophy API
+ */
+
+/**
+ * @dir vita3k/packages
+ *
+ * @brief PS Vita software package handling
  */
 
 /**

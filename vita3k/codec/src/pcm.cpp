@@ -1,5 +1,5 @@
 // Vita3K emulator project
-// Copyright (C) 2021 Vita3K team
+// Copyright (C) 2022 Vita3K team
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -176,15 +176,27 @@ bool PCMDecoderState::send(const uint8_t *data, uint32_t size) {
         const std::uint32_t samples_per_frame = (bytes_per_frame - 2) * 2;
 
         if (size % bytes_per_frame != 0) {
-            LOG_ERROR("Unaligned HEADPCM frame size");
+            LOG_ERROR("Unaligned HE ADPCM frame size");
             return false;
         }
 
+        // Allocate whole buffer now so we don't need to constantly increase it with push_back
+        transformed.resize((size / bytes_per_frame) * samples_per_frame);
+        std::int16_t *buffer = transformed.data();
+
+        if (source_channels > 1 && ((size / bytes_per_frame) % source_channels != 0)) {
+            LOG_ERROR("Wrong number of HE ADPCM frames");
+            return false;
+        }
+
+        const std::uint32_t src_ch = source_channels;
+
+        std::int32_t ch = 0;
         for (std::uint32_t i = 0; i < size / bytes_per_frame; i++) {
-            int32_t hist1 = adpcm_history1;
-            int32_t hist2 = adpcm_history2;
-            int32_t hist3 = adpcm_history3;
-            int32_t hist4 = adpcm_history4;
+            int32_t hist1 = adpcm_history[ch].hist1;
+            int32_t hist2 = adpcm_history[ch].hist2;
+            int32_t hist3 = adpcm_history[ch].hist3;
+            int32_t hist4 = adpcm_history[ch].hist4;
 
             const std::uint8_t *frame = reinterpret_cast<const std::uint8_t *>(data + bytes_per_frame * i);
 
@@ -195,14 +207,16 @@ bool PCMDecoderState::send(const uint8_t *data, uint32_t size) {
             const std::uint8_t flag = (frame[1] >> 0) & 0xf;
 
             if ((coef_index > 127) || (shift_factor > 12)) {
-                LOG_WARN("HEVAG: in+correct coefs/shift at frame {}", i);
+                LOG_WARN("HE ADPCM: in+correct coefs/shift at frame {}", i);
             }
 
+            // Better to reset to 0
             if (coef_index > 127)
-                coef_index = 127; /* ? */
+                coef_index = 0; /* ? */
 
-            if (shift_factor > 12)
-                shift_factor = 9; /* ? */
+            // Don't care about it. We don't need that stuff in HEVAG
+            // if (shift_factor > 12)
+            //    shift_factor = 9; /* ? */
 
             shift_factor = 20 - shift_factor;
 
@@ -216,11 +230,12 @@ bool PCMDecoderState::send(const uint8_t *data, uint32_t size) {
                                      nibble_lookup[nibbles >> 4]
                                     : nibble_lookup[nibbles & 0xF])
                         << shift_factor; /*scale*/
-                    sample = ((hist1 * hevag_coefs[coef_index][0] + hist2 * hevag_coefs[coef_index][1] + hist3 * hevag_coefs[coef_index][2] + hist4 * hevag_coefs[coef_index][3]) >> 5) + sample;
+                    sample += ((hist1 * hevag_coefs[coef_index][0] + hist2 * hevag_coefs[coef_index][1] + hist3 * hevag_coefs[coef_index][2] + hist4 * hevag_coefs[coef_index][3]) >> 5);
                     sample >>= 8;
                 }
 
-                transformed.push_back(static_cast<std::int16_t>(std::clamp(sample, -32768, 32767)));
+                // Multichannel interleaving
+                buffer[i * src_ch + ch] = static_cast<std::int16_t>(std::clamp(sample, -32768, 32767));
 
                 hist4 = hist3;
                 hist3 = hist2;
@@ -228,10 +243,16 @@ bool PCMDecoderState::send(const uint8_t *data, uint32_t size) {
                 hist1 = sample;
             }
 
-            adpcm_history1 = hist1;
-            adpcm_history2 = hist2;
-            adpcm_history3 = hist3;
-            adpcm_history4 = hist4;
+            adpcm_history[ch].hist1 = hist1;
+            adpcm_history[ch].hist2 = hist2;
+            adpcm_history[ch].hist3 = hist3;
+            adpcm_history[ch].hist4 = hist4;
+
+            ch++;
+            ch %= src_ch;
+
+            if (ch == 0)
+                buffer += samples_per_frame * src_ch;
         }
 
         source_transformed = reinterpret_cast<std::uint8_t *>(transformed.data());
@@ -244,12 +265,8 @@ bool PCMDecoderState::send(const uint8_t *data, uint32_t size) {
     const int source_channel_type = (source_channels == 2) ? AV_CH_LAYOUT_STEREO : AV_CH_LAYOUT_MONO;
     const int dest_channel_type = AV_CH_LAYOUT_STEREO;
 
-    SwrContext *swr = swr_alloc_set_opts(nullptr,
-        dest_channel_type, AV_SAMPLE_FMT_FLT, static_cast<int>(dest_frequency),
-        source_channel_type, AV_SAMPLE_FMT_S16, static_cast<int>(source_frequency),
-        0, nullptr);
+    SwrContext *swr = (source_channels == 2) ? swr_stereo : swr_mono_to_stereo;
 
-    swr_init(swr);
     const int dest_count = swr_get_out_samples(swr, produced_samples);
 
     final_result.resize(sizeof(float) * dest_count * 2);
@@ -259,9 +276,9 @@ bool PCMDecoderState::send(const uint8_t *data, uint32_t size) {
 
     std::uint8_t *dest_data = &final_result[0];
 
+    // the result value contains the actual amount of converted sample, but it should be the same as
+    // dest_count because we are not resampling
     const int result = swr_convert(swr, &dest_data, dest_count, &source_transformed, produced_samples);
-    swr_free(&swr);
-    assert(result > 0);
     return true;
 }
 
@@ -271,7 +288,7 @@ bool PCMDecoderState::receive(uint8_t *data, DecoderSize *size) {
     }
 
     if (size) {
-        size->samples = static_cast<std::uint32_t>(final_result.size() / sizeof(float));
+        size->samples = static_cast<std::uint32_t>(final_result.size() / sizeof(float) / 2);
     }
 
     return true;
@@ -281,9 +298,24 @@ PCMDecoderState::PCMDecoderState(const float dest_frequency)
     : dest_frequency(dest_frequency)
     , he_adpcm(false)
     , source_channels(2)
-    , source_frequency(48000.0f)
-    , adpcm_history1(0)
-    , adpcm_history2(0)
-    , adpcm_history3(0)
-    , adpcm_history4(0) {
+    , source_frequency(48000.0f) {
+    // we are not resampling, we don't care about the sample rate
+    swr_mono_to_stereo = swr_alloc_set_opts(nullptr,
+        AV_CH_LAYOUT_STEREO, AV_SAMPLE_FMT_FLT, 48000,
+        AV_CH_LAYOUT_MONO, AV_SAMPLE_FMT_S16, 48000,
+        0, nullptr);
+
+    swr_init(swr_mono_to_stereo);
+
+    swr_stereo = swr_alloc_set_opts(nullptr,
+        AV_CH_LAYOUT_STEREO, AV_SAMPLE_FMT_FLT, 48000,
+        AV_CH_LAYOUT_STEREO, AV_SAMPLE_FMT_S16, 48000,
+        0, nullptr);
+
+    swr_init(swr_stereo);
+}
+
+PCMDecoderState::~PCMDecoderState() {
+    swr_free(&swr_mono_to_stereo);
+    swr_free(&swr_stereo);
 }

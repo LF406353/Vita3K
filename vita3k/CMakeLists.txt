@@ -1,6 +1,9 @@
 set(VITA3K_ORG_NAME "Vita3K")
 set(VITA3K_APP_NAME "Vita3K")
-set(VITA3K_APP_VERSION "v0.1.4")
+set(VITA3K_APP_VER_HI 0)
+set(VITA3K_APP_VER_MID 1)
+set(VITA3K_APP_VER_LO 6)
+set(VITA3K_APP_VERSION "v${VITA3K_APP_VER_HI}.${VITA3K_APP_VER_MID}.${VITA3K_APP_VER_LO}")
 
 execute_process(
 	COMMAND git rev-list HEAD --count
@@ -17,15 +20,44 @@ execute_process(
 	WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 	OUTPUT_VARIABLE GIT_BRANCH
 	OUTPUT_STRIP_TRAILING_WHITESPACE)
+execute_process(
+	COMMAND git config --get remote.origin.url
+	WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+	OUTPUT_VARIABLE GIT_REPO
+	OUTPUT_STRIP_TRAILING_WHITESPACE)
+
+if (NOT GIT_REPO STREQUAL "")
+	string(FIND ${GIT_REPO} "git@github.com:" IS_GIT_SSH)
+	if (IS_GIT_SSH EQUAL 0)
+		string(REPLACE "git@github.com:" "" GIT_REPO ${GIT_REPO})
+	else()
+		string(REPLACE "https://github.com/" "" GIT_REPO ${GIT_REPO})
+	endif()
+	string(REPLACE "/" ";" GIT_REPO ${GIT_REPO})
+	list(POP_BACK GIT_REPO)
+endif()
 
 if(GIT_HASH STREQUAL "")
 	set(VITA3K_GIT_REV "Development version")
-elseif((GIT_BRANCH STREQUAL "master") OR (GIT_BRANCH STREQUAL "HEAD"))
-	set(VITA3K_GIT_REV "${GIT_COUNT}-${GIT_HASH}")
-else()
-	set(VITA3K_GIT_REV "${GIT_COUNT}-${GIT_HASH}-${GIT_BRANCH}")
+	set(GIT_COUNT 0)
+elseif((GIT_REPO STREQUAL "Vita3K") AND ((GIT_BRANCH STREQUAL "master") OR (GIT_BRANCH STREQUAL "HEAD")))
+	set(VITA3K_GIT_REV "${GIT_HASH}")
 
+	if(USE_VITA3K_UPDATE)
+		add_definitions(-DUSE_VITA3K_UPDATE)
+	endif()
+else()
+	set(VITA3K_GIT_REV "${GIT_HASH}-${GIT_REPO}/${GIT_BRANCH}")
 endif()
+
+file(WRITE ${CMAKE_BINARY_DIR}/vita3k/config/gitver.h
+	"#define APP_VER_HI ${VITA3K_APP_VER_HI}\n"
+	"#define APP_VER_MID ${VITA3K_APP_VER_MID}\n"
+	"#define APP_VER_LO ${VITA3K_APP_VER_LO}\n"
+	"#define APP_NUMBER ${GIT_COUNT}\n"
+)
+
+include_directories(${CMAKE_BINARY_DIR}/vita3k/config)
 
 if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
 	set(LINUX TRUE)
@@ -48,19 +80,17 @@ macro(configure_boost)
 endmacro(configure_boost)
 
 configure_boost()
-if(${STANDARD_NUM} GREATER 14)
-	add_definitions(-DVITA3K_CPP${STANDARD_NUM})
-endif()
 
 if (USE_DISCORD_RICH_PRESENCE)
 	add_definitions(-DUSE_DISCORD)
 endif()
 
-if (USE_VULKAN)
-	add_definitions(-DUSE_VULKAN)
-endif()
-
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+if(NOT MSVC)
+	add_compile_options(-Wformat -Werror=format-security)
+endif()
 
 add_subdirectory(app)
 add_subdirectory(audio)
@@ -75,12 +105,13 @@ add_subdirectory(features)
 add_subdirectory(glutil)
 add_subdirectory(gui)
 add_subdirectory(gxm)
+add_subdirectory(host)
 add_subdirectory(ime)
 add_subdirectory(lang)
 add_subdirectory(net)
 add_subdirectory(ngs)
 add_subdirectory(np)
-add_subdirectory(host)
+add_subdirectory(emuenv)
 add_subdirectory(io)
 add_subdirectory(kernel)
 add_subdirectory(mem)
@@ -94,18 +125,17 @@ add_subdirectory(threads)
 add_subdirectory(touch)
 add_subdirectory(util)
 add_subdirectory(gdbstub)
+add_subdirectory(packages)
+add_subdirectory(vkutil)
 
 add_executable(vita3k MACOSX_BUNDLE main.cpp interface.cpp interface.h performance.cpp)
 
-target_link_libraries(vita3k PRIVATE app gui modules)
+target_link_libraries(vita3k PRIVATE app config ctrl display gdbstub gui gxm io miniz modules packages renderer shader touch)
 if(USE_DISCORD_RICH_PRESENCE)
 	target_link_libraries(vita3k PRIVATE discord-rpc)
 endif()
 if(LINUX)
 	target_link_libraries(vita3k PRIVATE stdc++fs)
-endif()
-if(${STANDARD_NUM} GREATER 14)
-	target_compile_features(vita3k PUBLIC cxx_std_${STANDARD_NUM})
 endif()
 
 set_target_properties(vita3k PROPERTIES OUTPUT_NAME Vita3K
@@ -157,6 +187,7 @@ elseif(LINUX)
 		POST_BUILD
 		COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/../data" "$<TARGET_FILE_DIR:vita3k>/data"
 		COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/../lang" "$<TARGET_FILE_DIR:vita3k>/lang"
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_CURRENT_SOURCE_DIR}/script/update-linux.sh" "$<TARGET_FILE_DIR:vita3k>/update-vita3k.sh"
 		COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/shaders-builtin" "$<TARGET_FILE_DIR:vita3k>/shaders-builtin")
 	if(USE_DISCORD_RICH_PRESENCE)
 		add_custom_command(
@@ -167,12 +198,13 @@ elseif(LINUX)
 elseif(WIN32)
 	target_sources(vita3k PRIVATE resource.h Vita3K.ico Vita3K.rc WindowsDpiAwareness.manifest)
 	set_property(DIRECTORY ${CMAKE_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT vita3k)
-	set_target_properties(vita3k PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/build-windows/bin")
+	set_target_properties(vita3k PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$(Configuration)")
 	add_custom_command(
 		TARGET vita3k
 		POST_BUILD
 		COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/../data" "$<TARGET_FILE_DIR:vita3k>/data"
 		COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/../lang" "$<TARGET_FILE_DIR:vita3k>/lang"
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_CURRENT_SOURCE_DIR}/script/update-windows.bat" "$<TARGET_FILE_DIR:vita3k>/update-vita3k.bat"
 		COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/shaders-builtin" "$<TARGET_FILE_DIR:vita3k>/shaders-builtin"
 		COMMAND ${CMAKE_COMMAND} -E copy_if_different "${PROJECT_SOURCE_DIR}/external/sdl/windows/lib/x64/SDL2.dll" "$<TARGET_FILE_DIR:vita3k>"
 		COMMAND ${CMAKE_COMMAND} -E copy_if_different "${UNICORN_DLL_DIR}/unicorn.dll" "$<TARGET_FILE_DIR:vita3k>"
@@ -185,3 +217,6 @@ elseif(WIN32)
 		COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_BINARY_DIR}/external/discord_game_sdk/lib/x86_64/discord_game_sdk.dll" "$<TARGET_FILE_DIR:vita3k>")
 	endif()
 endif()
+
+# Enable Tracy profiling on the main compilation target
+target_link_libraries(vita3k PRIVATE tracy)

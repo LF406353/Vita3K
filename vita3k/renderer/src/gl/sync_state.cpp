@@ -1,5 +1,5 @@
 // Vita3K emulator project
-// Copyright (C) 2021 Vita3K team
+// Copyright (C) 2022 Vita3K team
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -25,7 +25,10 @@
 
 #include <gxm/functions.h>
 #include <gxm/types.h>
+#include <util/align.h>
 #include <util/log.h>
+
+#include <shader/spirv_recompiler.h>
 
 #include <cmath>
 
@@ -106,48 +109,26 @@ static GLenum translate_stencil_func(SceGxmStencilFunc stencil_func) {
     return GL_ALWAYS;
 }
 
-void sync_mask(GLContext &context, const MemState &mem) {
-    auto control = context.record.depth_stencil_surface.control.get(mem);
-    auto width = context.render_target->width;
-    auto height = context.render_target->height;
-    GLubyte initial_byte;
-    if (control) {
-        initial_byte = control->backgroundMask ? 0xFF : 0;
-    } else {
-        // always accept
-        initial_byte = 0xFF;
-    }
-    std::vector<GLubyte> emptyData(width * height * 4, initial_byte);
-    GLint texId;
-    glGetIntegerv(GL_TEXTURE_BINDING_2D, &texId);
-    glBindTexture(GL_TEXTURE_2D, context.render_target->masktexture[0]);
-    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, &emptyData[0]);
-    glBindTexture(GL_TEXTURE_2D, texId);
+void sync_mask(const GLState &state, GLContext &context, const MemState &mem) {
+    auto control = context.record.depth_stencil_surface.control.content;
+    // mask is not upscaled
+    auto width = context.render_target->width / state.res_multiplier;
+    auto height = context.render_target->height / state.res_multiplier;
+    GLubyte initial_byte = (control & SceGxmDepthStencilControl::mask_bit) ? 0xFF : 0;
+
+    GLubyte clear_bytes[4] = { initial_byte, initial_byte, initial_byte, initial_byte };
+    glClearTexImage(context.render_target->masktexture[0], 0, GL_RGBA, GL_UNSIGNED_BYTE, clear_bytes);
 }
 
-void sync_viewport_flat(GLContext &context) {
+void sync_viewport_flat(const GLState &state, GLContext &context) {
     const GLsizei display_w = context.record.color_surface.width;
     const GLsizei display_h = context.record.color_surface.height;
-    const float previous_flip_y = context.viewport_flip[1];
 
-    context.viewport_flip[0] = 1.0f;
-    context.viewport_flip[1] = -1.0f;
-    context.viewport_flip[2] = 1.0f;
-    context.viewport_flip[3] = 1.0f;
-
-    context.record.viewport_flat = true;
-
-    glViewport(0, context.current_framebuffer_height - display_h, display_w, display_h);
+    glViewport(0, (context.current_framebuffer_height - display_h) * state.res_multiplier, display_w * state.res_multiplier, display_h * state.res_multiplier);
     glDepthRange(0, 1);
-
-    if (previous_flip_y != context.viewport_flip[1]) {
-        // We need to sync again state that uses the flip
-        sync_cull(context.record);
-        sync_clipping(context);
-    }
 }
 
-void sync_viewport_real(GLContext &context, const float xOffset, const float yOffset, const float zOffset,
+void sync_viewport_real(const GLState &state, GLContext &context, const float xOffset, const float yOffset, const float zOffset,
     const float xScale, const float yScale, const float zScale) {
     const GLfloat ymin = yOffset + yScale;
     const GLfloat ymax = yOffset - yScale - 1;
@@ -157,31 +138,16 @@ void sync_viewport_real(GLContext &context, const float xOffset, const float yOf
     const GLfloat x = xOffset - std::abs(xScale);
     const GLfloat y = std::min<GLfloat>(ymin, ymax);
 
-    const float previous_flip_y = context.viewport_flip[1];
-
-    context.viewport_flip[0] = 1.0f;
-    context.viewport_flip[1] = (ymin < ymax) ? -1.0f : 1.0f;
-    context.viewport_flip[2] = 1.0f;
-    context.viewport_flip[3] = 1.0f;
-
-    context.record.viewport_flat = false;
-
-    glViewportIndexedf(0, x, y, w, h);
-    glDepthRange(zOffset - zScale, zOffset + zScale);
-
-    if (previous_flip_y != context.viewport_flip[1]) {
-        // We need to sync again state that uses the flip
-        sync_cull(context.record);
-        sync_clipping(context);
-    }
+    glViewportIndexedf(0, x * state.res_multiplier, y * state.res_multiplier, w * state.res_multiplier, h * state.res_multiplier);
+    glDepthRange(0, 1);
 }
 
-void sync_clipping(GLContext &context) {
+void sync_clipping(const GLState &state, GLContext &context) {
     const GLsizei display_h = context.current_framebuffer_height;
     const GLsizei scissor_x = context.record.region_clip_min.x;
     GLsizei scissor_y = 0;
 
-    if (context.viewport_flip[1] == -1.0f)
+    if (context.record.viewport_flip[1] == -1.0f)
         scissor_y = context.record.region_clip_min.y;
     else
         scissor_y = display_h - context.record.region_clip_max.y - 1;
@@ -199,7 +165,7 @@ void sync_clipping(GLContext &context) {
         break;
     case SCE_GXM_REGION_CLIP_OUTSIDE:
         glEnable(GL_SCISSOR_TEST);
-        glScissor(scissor_x, scissor_y, scissor_w, scissor_h);
+        glScissor(scissor_x * state.res_multiplier, scissor_y * state.res_multiplier, scissor_w * state.res_multiplier, scissor_h * state.res_multiplier);
         break;
     case SCE_GXM_REGION_CLIP_INSIDE:
         // TODO: Implement SCE_GXM_REGION_CLIP_INSIDE
@@ -236,40 +202,37 @@ void sync_depth_write_enable(const SceGxmDepthWriteMode mode, const bool is_fron
         glDepthMask(mode == SCE_GXM_DEPTH_WRITE_ENABLED ? GL_TRUE : GL_FALSE);
 }
 
-bool sync_depth_data(const renderer::GxmRecordState &state) {
+void sync_depth_data(const renderer::GxmRecordState &state) {
     // Depth test.
-    if (state.depth_stencil_surface.depthData) {
-        glEnable(GL_DEPTH_TEST);
-        return true;
-    }
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
 
-    glDisable(GL_DEPTH_TEST);
-    return false;
+    // If force load is enabled to load saved depth and depth data memory exists (the second condition is just for safe, may sometimes contradict its usefulness, hopefully won't)
+    if (((state.depth_stencil_surface.zlsControl & SCE_GXM_DEPTH_STENCIL_FORCE_LOAD_ENABLED) == 0) && (state.depth_stencil_surface.depthData)) {
+        glClearDepth(state.depth_stencil_surface.backgroundDepth);
+        glClear(GL_DEPTH_BUFFER_BIT);
+    }
 }
 
-void sync_stencil_func(const GxmStencilState &state, const MemState &mem, const bool is_back_stencil) {
+void sync_stencil_func(const GxmStencilStateOp &state_op, const GxmStencilStateValues &state_vals, const MemState &mem, const bool is_back_stencil) {
     const GLenum face = is_back_stencil ? GL_BACK : GL_FRONT;
 
     glStencilOpSeparate(face,
-        translate_stencil_op(state.stencil_fail),
-        translate_stencil_op(state.depth_fail),
-        translate_stencil_op(state.depth_pass));
-    glStencilFuncSeparate(face, translate_stencil_func(state.func), state.ref, state.compare_mask);
-    glStencilMaskSeparate(face, state.write_mask);
+        translate_stencil_op(state_op.stencil_fail),
+        translate_stencil_op(state_op.depth_fail),
+        translate_stencil_op(state_op.depth_pass));
+    glStencilFuncSeparate(face, translate_stencil_func(state_op.func), state_vals.ref, state_vals.compare_mask);
+    glStencilMaskSeparate(face, state_vals.write_mask);
 }
 
-bool sync_stencil_data(const GxmRecordState &state, const MemState &mem) {
-    // Stencil.
-    if (state.depth_stencil_surface.stencilData) {
-        glEnable(GL_STENCIL_TEST);
-        glStencilMask(GL_TRUE);
-        glClearStencil(state.depth_stencil_surface.control.get(mem)->backgroundStencil);
+void sync_stencil_data(const GxmRecordState &state, const MemState &mem) {
+    // Stencil test.
+    glEnable(GL_STENCIL_TEST);
+    glStencilMask(GL_TRUE);
+    if ((state.depth_stencil_surface.zlsControl & SCE_GXM_DEPTH_STENCIL_FORCE_LOAD_ENABLED) == 0) {
+        glClearStencil(state.depth_stencil_surface.control.content & SceGxmDepthStencilControl::stencil_bits);
         glClear(GL_STENCIL_BUFFER_BIT);
-        return true;
     }
-
-    glDisable(GL_STENCIL_TEST);
-    return false;
 }
 
 void sync_polygon_mode(const SceGxmPolygonMode mode, const bool front) {
@@ -309,7 +272,7 @@ void sync_depth_bias(const int factor, const int unit, const bool is_front) {
     }
 }
 
-void sync_texture(GLContext &context, MemState &mem, std::size_t index, SceGxmTexture texture,
+void sync_texture(GLState &state, GLContext &context, MemState &mem, std::size_t index, SceGxmTexture texture,
     const Config &config, const std::string &base_path, const std::string &title_id) {
     Address data_addr = texture.data_addr << 2;
 
@@ -326,16 +289,26 @@ void sync_texture(GLContext &context, MemState &mem, std::size_t index, SceGxmTe
         return;
     }
 
+    if (index >= SCE_GXM_MAX_TEXTURE_UNITS) {
+        // Vertex textures
+        context.shader_hints.vertex_textures[index - SCE_GXM_MAX_TEXTURE_UNITS] = format;
+    } else {
+        context.shader_hints.fragment_textures[index] = format;
+    }
+
     glActiveTexture(static_cast<GLenum>(static_cast<std::size_t>(GL_TEXTURE0) + index));
 
     std::uint64_t texture_as_surface = 0;
+    const GLint *swizzle_surface = nullptr;
+    bool only_nearest = false;
+
     if (context.record.color_surface.data.address() == data_addr) {
         texture_as_surface = context.current_color_attachment;
+        swizzle_surface = color::translate_swizzle(context.record.color_surface.colorFormat);
 
-        if (std::find(context.self_sampling_indices.begin(), context.self_sampling_indices.end(),
-                static_cast<GLuint>(index))
+        if (std::find(context.self_sampling_indices.begin(), context.self_sampling_indices.end(), index)
             == context.self_sampling_indices.end()) {
-            context.self_sampling_indices.push_back(static_cast<GLuint>(index));
+            context.self_sampling_indices.push_back(index);
         }
     } else {
         auto res = std::find(context.self_sampling_indices.begin(), context.self_sampling_indices.end(),
@@ -344,19 +317,93 @@ void sync_texture(GLContext &context, MemState &mem, std::size_t index, SceGxmTe
             context.self_sampling_indices.erase(res);
         }
 
-        texture_as_surface = context.surface_cache.retrieve_color_surface_texture_handle(
-            static_cast<std::uint16_t>(gxm::get_width(&texture)),
-            static_cast<std::uint16_t>(gxm::get_height(&texture)),
-            Ptr<void>(data_addr), renderer::SurfaceTextureRetrievePurpose::READING);
+        SceGxmColorBaseFormat format_target_of_texture;
+
+        std::uint16_t width = static_cast<std::uint16_t>(gxm::get_width(&texture));
+        std::uint16_t height = static_cast<std::uint16_t>(gxm::get_height(&texture));
+
+        if (renderer::texture::convert_base_texture_format_to_base_color_format(base_format, format_target_of_texture)) {
+            std::uint16_t stride_in_pixels = width;
+
+            switch (texture.texture_type()) {
+            case SCE_GXM_TEXTURE_LINEAR_STRIDED:
+                stride_in_pixels = static_cast<std::uint16_t>(gxm::get_stride_in_bytes(&texture)) / ((renderer::texture::bits_per_pixel(base_format) + 7) >> 3);
+                break;
+            case SCE_GXM_TEXTURE_LINEAR:
+                // when the texture is linear, the stride should be aligned to 8 pixels
+                stride_in_pixels = align(stride_in_pixels, 8);
+                break;
+            case SCE_GXM_TEXTURE_TILED:
+                // tiles are 32x32
+                stride_in_pixels = align(stride_in_pixels, 32);
+                break;
+            }
+
+            std::uint32_t swizz_raw = 0;
+
+            texture_as_surface = state.surface_cache.retrieve_color_surface_texture_handle(
+                state, width, height, stride_in_pixels, format_target_of_texture, Ptr<void>(data_addr),
+                renderer::SurfaceTextureRetrievePurpose::READING, swizz_raw);
+
+            swizzle_surface = color::translate_swizzle(static_cast<SceGxmColorFormat>(format_target_of_texture | swizz_raw));
+            only_nearest = color::is_write_surface_non_linearity_filtering(format_target_of_texture);
+        }
+
+        // Try to retrieve S24D8 texture
+        if (!texture_as_surface) {
+            SceGxmDepthStencilSurface lookup_temp;
+            lookup_temp.depthData = data_addr;
+            lookup_temp.stencilData.reset();
+
+            texture_as_surface = state.surface_cache.retrieve_depth_stencil_texture_handle(state, mem, lookup_temp, width, height, true);
+            if (texture_as_surface) {
+                only_nearest = true;
+            }
+        }
     }
 
     if (texture_as_surface != 0) {
         glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(texture_as_surface));
+
+        if (only_nearest) {
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        }
+
+        if (base_format != SCE_GXM_TEXTURE_BASE_FORMAT_X8U24) {
+            const GLint *swizzle = texture::translate_swizzle(format);
+
+            if (swizzle) {
+                if (swizzle_surface) {
+                    if (std::memcmp(swizzle_surface, swizzle, 16) != 0) {
+                        // Surface is stored in RGBA in GPU memory, unless in other circumstances. So we must reverse order
+                        for (int i = 0; i < 4; i++) {
+                            if ((swizzle[i] < GL_RED) || (swizzle[i] > GL_ALPHA)) {
+                                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_R + i, swizzle[i]);
+                            } else {
+                                for (int j = 0; j < 4; j++) {
+                                    if (swizzle[i] == swizzle_surface[j]) {
+                                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_R + i, GL_RED + j);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        const GLint default_rgba[4] = { GL_RED, GL_GREEN, GL_BLUE, GL_ALPHA };
+                        glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, default_rgba);
+                    }
+                } else {
+                    LOG_TRACE("No surface swizzle found, use default texture swizzle");
+                    glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle);
+                }
+            }
+        }
     } else {
         if (config.texture_cache) {
-            renderer::texture::cache_and_bind_texture(context.texture_cache, texture, mem);
+            renderer::texture::cache_and_bind_texture(state.texture_cache, texture, mem);
         } else {
-            texture::bind_texture(context.texture_cache, texture, mem);
+            texture::bind_texture(state.texture_cache, texture, mem);
         }
     }
 
@@ -396,7 +443,14 @@ void sync_blending(const GxmRecordState &state, const MemState &mem) {
     }
 }
 
-void sync_vertex_attributes(GLContext &context, const GxmRecordState &state, const MemState &mem) {
+void clear_previous_uniform_storage(GLContext &context) {
+    context.vertex_uniform_buffer_storage_ptr.first = nullptr;
+    context.vertex_uniform_buffer_storage_ptr.second = 0;
+    context.fragment_uniform_buffer_storage_ptr.first = nullptr;
+    context.fragment_uniform_buffer_storage_ptr.second = 0;
+}
+
+void sync_vertex_streams_and_attributes(GLContext &context, GxmRecordState &state, const MemState &mem) {
     // Vertex attributes.
     const SceGxmVertexProgram &vertex_program = *state.vertex_program.get(mem);
     GLVertexProgram *glvert = reinterpret_cast<GLVertexProgram *>(vertex_program.renderer_data.get());
@@ -406,27 +460,72 @@ void sync_vertex_attributes(GLContext &context, const GxmRecordState &state, con
         const SceGxmProgram *vertex_program_body = vertex_program.program.get(mem);
         if (vertex_program_body && (vertex_program_body->primary_reg_count != 0)) {
             for (std::size_t i = 0; i < vertex_program.attributes.size(); i++) {
-                glvert->attribute_infos.emplace(vertex_program.attributes[i].regIndex, shader::usse::AttributeInformation(static_cast<std::uint16_t>(i), SCE_GXM_PARAMETER_TYPE_F32));
+                glvert->attribute_infos.emplace(vertex_program.attributes[i].regIndex, shader::usse::AttributeInformation(static_cast<std::uint16_t>(i), SCE_GXM_PARAMETER_TYPE_F32, false, false, false));
             }
         }
 
         glvert->stripped_symbols_checked = true;
     }
 
+    // Each draw will upload the stream data. Assuming that, we can just bind buffer, upload data
+    // The GXM submit side should already submit used buffer, but we just delete all just in case
+    std::array<std::size_t, SCE_GXM_MAX_VERTEX_STREAMS> offset_in_buffer;
+    for (std::size_t i = 0; i < SCE_GXM_MAX_VERTEX_STREAMS; i++) {
+        if (state.vertex_streams[i].data) {
+            std::pair<std::uint8_t *, std::size_t> result = context.vertex_stream_ring_buffer.allocate(state.vertex_streams[i].size);
+            if (!result.first) {
+                LOG_ERROR("Failed to allocate vertex stream data from GPU!");
+            } else {
+                std::memcpy(result.first, state.vertex_streams[i].data, state.vertex_streams[i].size);
+                offset_in_buffer[i] = result.second;
+            }
+
+            delete[] state.vertex_streams[i].data;
+
+            state.vertex_streams[i].data = nullptr;
+            state.vertex_streams[i].size = 0;
+        } else {
+            offset_in_buffer[i] = 0;
+        }
+    }
+
+    glBindBuffer(GL_ARRAY_BUFFER, context.vertex_stream_ring_buffer.handle());
+
     for (const SceGxmVertexAttribute &attribute : vertex_program.attributes) {
+        if (glvert->attribute_infos.find(attribute.regIndex) == glvert->attribute_infos.end())
+            continue;
+
         const SceGxmVertexStream &stream = vertex_program.streams[attribute.streamIndex];
 
         const SceGxmAttributeFormat attribute_format = static_cast<SceGxmAttributeFormat>(attribute.format);
-        const GLenum type = attribute_format_to_gl_type(attribute_format);
+        GLenum type = attribute_format_to_gl_type(attribute_format);
         const GLboolean normalised = attribute_format_normalised(attribute_format);
 
         int attrib_location = 0;
         bool upload_integral = false;
 
-        if (glvert->attribute_infos.find(attribute.regIndex) != glvert->attribute_infos.end()) {
-            shader::usse::AttributeInformation info = glvert->attribute_infos.at(attribute.regIndex);
-            attrib_location = info.location();
+        shader::usse::AttributeInformation info = glvert->attribute_infos.at(attribute.regIndex);
+        attrib_location = info.location();
 
+        // these 2 values are only used when a matrix is used as a vertex attribute
+        // this is only supported for regformated attribute for now
+        uint32_t array_size = 1;
+        uint32_t array_element_size = 0;
+        uint8_t component_count = attribute.componentCount;
+
+        if (info.regformat) {
+            const int comp_size = gxm::attribute_format_size(attribute_format);
+            component_count = (comp_size * component_count + 3) / 4;
+            type = GL_INT;
+            upload_integral = true;
+
+            if (component_count > 4) {
+                // a matrix is used as an attribute, pack everything into an array of vec4
+                array_size = (component_count + 3) / 4;
+                array_element_size = 4 * sizeof(int32_t);
+                component_count = 4;
+            }
+        } else {
             switch (info.gxm_type()) {
             case SCE_GXM_PARAMETER_TYPE_U8:
             case SCE_GXM_PARAMETER_TYPE_S8:
@@ -439,21 +538,23 @@ void sync_vertex_attributes(GLContext &context, const GxmRecordState &state, con
             default:
                 break;
             }
+        }
 
-            glBindBuffer(GL_ARRAY_BUFFER, context.stream_vertex_buffers[attribute.streamIndex]);
+        const std::uint16_t stream_index = attribute.streamIndex;
 
+        for (int i = 0; i < array_size; i++) {
             if (upload_integral || (attribute_format == SCE_GXM_ATTRIBUTE_FORMAT_UNTYPED)) {
-                glVertexAttribIPointer(attrib_location, attribute.componentCount, type, stream.stride, reinterpret_cast<const GLvoid *>(attribute.offset));
+                glVertexAttribIPointer(attrib_location + i, component_count, type, stream.stride, reinterpret_cast<const GLvoid *>(i * array_element_size + attribute.offset + offset_in_buffer[stream_index]));
             } else {
-                glVertexAttribPointer(attrib_location, attribute.componentCount, type, normalised, stream.stride, reinterpret_cast<const GLvoid *>(attribute.offset));
+                glVertexAttribPointer(attrib_location + i, component_count, type, normalised, stream.stride, reinterpret_cast<const GLvoid *>(i * array_element_size + attribute.offset + offset_in_buffer[stream_index]));
             }
 
-            glEnableVertexAttribArray(attrib_location);
+            glEnableVertexAttribArray(attrib_location + i);
 
             if (gxm::is_stream_instancing(static_cast<SceGxmIndexSource>(stream.indexSource))) {
-                glVertexAttribDivisor(attrib_location, 1);
+                glVertexAttribDivisor(attrib_location + i, 1);
             } else {
-                glVertexAttribDivisor(attrib_location, 0);
+                glVertexAttribDivisor(attrib_location + i, 0);
             }
         }
     }

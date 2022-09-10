@@ -22,7 +22,7 @@
 #include <glutil/object_array.h>
 #include <renderer/types.h>
 
-#include <renderer/gl/surface_cache.h>
+#include <renderer/gl/ring_buffer.h>
 #include <renderer/texture_cache_state.h>
 #include <shader/usse_program_analyzer.h>
 
@@ -48,16 +48,10 @@ inline bool operator==(const ExcludedUniform &lhs, const ExcludedUniform &rhs) {
     return (lhs.name == rhs.name) && (lhs.program == rhs.program);
 }
 
-typedef std::map<std::string, SharedGLObject> ShaderCache;
-typedef std::tuple<std::string, std::string> ProgramHashes;
+typedef std::map<Sha256Hash, SharedGLObject> ShaderCache;
 typedef std::map<ProgramHashes, SharedGLObject> ProgramCache;
 typedef std::vector<ExcludedUniform> ExcludedUniforms; // vector instead of unordered_set since it's much faster for few elements
 typedef std::map<GLuint, GLenum> UniformTypes;
-
-struct UniformSetRequest {
-    const SceGxmProgramParameter *parameter;
-    const void *data;
-};
 
 struct GLTextureCacheState : public renderer::TextureCacheState {
     GLObjectArray<TextureCacheSize> textures;
@@ -66,16 +60,16 @@ struct GLTextureCacheState : public renderer::TextureCacheState {
 struct GLRenderTarget;
 
 struct GLContext : public renderer::Context {
-    GLTextureCacheState texture_cache;
-    GLSurfaceCache surface_cache;
-
     GLObjectArray<1> vertex_array;
-    GLObjectArray<1> element_buffer;
-    GLObjectArray<2> ssbo;
-    GLObjectArray<2> uniform_buffer;
-    const GLRenderTarget *render_target;
 
-    std::map<int, std::vector<uint8_t>> ubo_data;
+    RingBuffer vertex_stream_ring_buffer;
+    RingBuffer index_stream_ring_buffer;
+    RingBuffer vertex_uniform_stream_ring_buffer;
+    RingBuffer fragment_uniform_stream_ring_buffer;
+    RingBuffer vertex_info_uniform_buffer;
+    RingBuffer fragment_info_uniform_buffer;
+
+    const GLRenderTarget *render_target;
 
     GLObjectArray<SCE_GXM_MAX_VERTEX_STREAMS> stream_vertex_buffers;
     GLuint last_draw_program{ 0 };
@@ -83,13 +77,12 @@ struct GLContext : public renderer::Context {
     GLuint current_color_attachment{ 0 };
     GLuint current_framebuffer_height{ 0 };
 
-    std::vector<GLuint> self_sampling_indices;
+    std::pair<std::uint8_t *, std::size_t> vertex_uniform_buffer_storage_ptr{ nullptr, 0 };
+    std::pair<std::uint8_t *, std::size_t> fragment_uniform_buffer_storage_ptr{ nullptr, 0 };
 
-    float viewport_flip[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    std::vector<size_t> self_sampling_indices;
 
-    std::vector<UniformSetRequest> vertex_set_requests;
-    std::vector<UniformSetRequest> fragment_set_requests;
-
+    explicit GLContext();
     ~GLContext() override = default;
 };
 
@@ -115,9 +108,6 @@ struct GLFragmentProgram : public renderer::FragmentProgram {
 
 struct GLVertexProgram : public renderer::VertexProgram {
     GLShaderStatics statics;
-    shader::usse::AttributeInformationMap attribute_infos;
-
-    bool stripped_symbols_checked;
 };
 
 struct GLRenderTarget : public renderer::RenderTarget {

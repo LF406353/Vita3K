@@ -1,5 +1,5 @@
 // Vita3K emulator project
-// Copyright (C) 2021 Vita3K team
+// Copyright (C) 2022 Vita3K team
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -23,7 +23,8 @@
 
 #include <gui/functions.h>
 
-#include <host/functions.h>
+#include <config/state.h>
+#include <packages/sfo.h>
 
 #include <io/VitaIoDevice.h>
 #include <io/functions.h>
@@ -44,8 +45,8 @@ auto get_recursive_directory_size(const T &path) {
 }
 } // namespace
 
-void get_app_info(GuiState &gui, HostState &host, const std::string &app_path) {
-    const auto APP_PATH{ fs::path(host.pref_path) / "ux0/app" / app_path };
+void get_app_info(GuiState &gui, EmuEnvState &emuenv, const std::string &app_path) {
+    const auto APP_PATH{ fs::path(emuenv.pref_path) / "ux0/app" / app_path };
     gui.app_selector.app_info = {};
 
     if (fs::exists(APP_PATH) && !fs::is_empty(APP_PATH)) {
@@ -57,13 +58,13 @@ void get_app_info(GuiState &gui, HostState &host, const std::string &app_path) {
     }
 }
 
-size_t get_app_size(GuiState &gui, HostState &host, const std::string &app_path) {
-    const auto APP_PATH{ fs::path(host.pref_path) / "ux0/app" / app_path };
+size_t get_app_size(GuiState &gui, EmuEnvState &emuenv, const std::string &app_path) {
+    const auto APP_PATH{ fs::path(emuenv.pref_path) / "ux0/app" / app_path };
     boost::uintmax_t app_size = 0;
     if (fs::exists(APP_PATH) && !fs::is_empty(APP_PATH)) {
         app_size += get_recursive_directory_size(APP_PATH);
     }
-    const auto ADDCONT_PATH{ fs::path(host.pref_path) / "ux0/addcont" / get_app_index(gui, app_path)->title_id };
+    const auto ADDCONT_PATH{ fs::path(emuenv.pref_path) / "ux0/addcont" / get_app_index(gui, app_path)->title_id };
     if (fs::exists(ADDCONT_PATH) && !fs::is_empty(ADDCONT_PATH)) {
         app_size += get_recursive_directory_size(ADDCONT_PATH);
     }
@@ -72,12 +73,12 @@ size_t get_app_size(GuiState &gui, HostState &host, const std::string &app_path)
 
 std::string get_unit_size(const size_t &size) {
     std::string size_str;
-    if (size >= GB(10))
-        size_str = std::to_string(size / GB(1)) + " GB";
-    else if (size >= MB(10))
-        size_str = std::to_string(size / MB(1)) + " MB";
-    else if (size >= KB(1))
-        size_str = std::to_string(size / KB(1)) + " KB";
+    if (size >= GiB(10))
+        size_str = std::to_string(size / GiB(1)) + " GB";
+    else if (size >= MiB(10))
+        size_str = std::to_string(size / MiB(1)) + " MB";
+    else if (size >= KiB(1))
+        size_str = std::to_string(size / KiB(1)) + " KB";
     else
         size_str = std::to_string(size) + " B";
 
@@ -93,10 +94,10 @@ struct SaveData {
 
 static std::vector<SaveData> save_data_list;
 
-static void get_save_data_list(GuiState &gui, HostState &host) {
+static void get_save_data_list(GuiState &gui, EmuEnvState &emuenv) {
     save_data_list.clear();
 
-    fs::path SAVE_PATH{ fs::path{ host.pref_path } / "ux0/user" / host.io.user_id / "savedata" };
+    fs::path SAVE_PATH{ fs::path{ emuenv.pref_path } / "ux0/user" / emuenv.io.user_id / "savedata" };
     if (!fs::exists(SAVE_PATH))
         return;
 
@@ -120,16 +121,16 @@ static void get_save_data_list(GuiState &gui, HostState &host) {
 static std::map<std::string, size_t> apps_size;
 static std::map<std::string, std::string> space;
 
-void init_content_manager(GuiState &gui, HostState &host) {
+void init_content_manager(GuiState &gui, EmuEnvState &emuenv) {
     space.clear();
 
-    const auto free_size{ fs::space(host.pref_path).free };
+    const auto free_size{ fs::space(emuenv.pref_path).free };
     space["free"] = get_unit_size(free_size);
 
-    const auto query_app = [&gui, &host] {
+    const auto query_app = [&gui, &emuenv] {
         const auto &directory_list = gui.app_selector.user_apps;
         const auto pred = [&](const auto acc, const auto &app) {
-            apps_size[app.path] = get_app_size(gui, host, app.path);
+            apps_size[app.path] = get_app_size(gui, emuenv, app.path);
             return acc + apps_size[app.path];
         };
         return boost::accumulate(directory_list, boost::uintmax_t{}, pred);
@@ -141,8 +142,8 @@ void init_content_manager(GuiState &gui, HostState &host) {
         return boost::accumulate(directory_list, boost::uintmax_t{}, pred);
     };
 
-    const auto query_themes = [&host] {
-        const auto THEME_PATH{ fs::path(host.pref_path) / "ux0/theme" };
+    const auto query_themes = [&emuenv] {
+        const auto THEME_PATH{ fs::path(emuenv.pref_path) / "ux0/theme" };
         const auto &directory_list = fs::directory_iterator(THEME_PATH);
         const auto pred = [&](const auto acc, const auto &) { return acc + get_recursive_directory_size(THEME_PATH); };
         if (fs::exists(THEME_PATH) && !fs::is_empty(THEME_PATH)) {
@@ -157,7 +158,7 @@ void init_content_manager(GuiState &gui, HostState &host) {
     };
 
     space["app"] = get_list_size_or_dash(query_app);
-    get_save_data_list(gui, host);
+    get_save_data_list(gui, emuenv);
     space["savedata"] = get_list_size_or_dash(query_savedata);
     space["themes"] = get_list_size_or_dash(query_themes);
 }
@@ -165,7 +166,7 @@ void init_content_manager(GuiState &gui, HostState &host) {
 static std::map<std::string, bool> contents_selected;
 static std::string app_selected, size_selected_contents, menu, title;
 
-static bool get_size_selected_contents(GuiState &gui, HostState &host) {
+static bool get_size_selected_contents(GuiState &gui, EmuEnvState &emuenv) {
     size_selected_contents.clear();
     const auto pred = [](const auto acc, const auto &content) {
         if (content.second) {
@@ -193,14 +194,14 @@ struct AddCont {
 
 static std::map<std::string, AddCont> addcont_info;
 
-static void get_content_info(GuiState &gui, HostState &host) {
-    const auto APP_PATH{ fs::path(host.pref_path) / "ux0/app" / app_selected };
+static void get_content_info(GuiState &gui, EmuEnvState &emuenv) {
+    const auto APP_PATH{ fs::path(emuenv.pref_path) / "ux0/app" / app_selected };
     if (fs::exists(APP_PATH) && !fs::is_empty(APP_PATH)) {
         gui.app_selector.app_info.size = get_recursive_directory_size(APP_PATH);
     }
 
     addcont_info.clear();
-    const auto ADDCONT_PATH{ fs::path(host.pref_path) / "ux0/addcont" / app_selected };
+    const auto ADDCONT_PATH{ fs::path(emuenv.pref_path) / "ux0/addcont" / app_selected };
     if (fs::exists(ADDCONT_PATH) && !fs::is_empty(ADDCONT_PATH)) {
         for (const auto &addcont : fs::directory_iterator(ADDCONT_PATH)) {
             const auto content_id = addcont.path().stem().string();
@@ -215,10 +216,10 @@ static void get_content_info(GuiState &gui, HostState &host) {
 
             const auto content_path{ fs::path("addcont") / app_selected / content_id };
             vfs::FileBuffer params;
-            if (vfs::read_file(VitaIoDevice::ux0, params, host.pref_path, content_path.string() + "/sce_sys/param.sfo")) {
+            if (vfs::read_file(VitaIoDevice::ux0, params, emuenv.pref_path, content_path.string() + "/sce_sys/param.sfo")) {
                 SfoFile sfo_handle;
                 sfo::load(sfo_handle, params);
-                if (!sfo::get_data_by_key(addcont_info[content_id].name, sfo_handle, fmt::format("TITLE_{:0>2d}", host.cfg.sys_lang)))
+                if (!sfo::get_data_by_key(addcont_info[content_id].name, sfo_handle, fmt::format("TITLE_{:0>2d}", emuenv.cfg.sys_lang)))
                     sfo::get_data_by_key(addcont_info[content_id].name, sfo_handle, "TITLE");
             }
             boost::trim(addcont_info[content_id].name);
@@ -230,10 +231,10 @@ static bool popup, content_delete, set_scroll_pos;
 static float scroll_pos;
 static ImGuiTextFilter search_bar;
 
-void draw_content_manager(GuiState &gui, HostState &host) {
+void draw_content_manager(GuiState &gui, EmuEnvState &emuenv) {
     const auto display_size = ImGui::GetIO().DisplaySize;
-    const auto RES_SCALE = ImVec2(display_size.x / host.res_width_dpi_scale, display_size.y / host.res_height_dpi_scale);
-    const auto SCALE = ImVec2(RES_SCALE.x * host.dpi_scale, RES_SCALE.y * host.dpi_scale);
+    const auto RES_SCALE = ImVec2(display_size.x / emuenv.res_width_dpi_scale, display_size.y / emuenv.res_height_dpi_scale);
+    const auto SCALE = ImVec2(RES_SCALE.x * emuenv.dpi_scale, RES_SCALE.y * emuenv.dpi_scale);
     const auto INFORMATION_BAR_HEIGHT = 32.f * SCALE.y;
 
     const auto SIZE_ICON_LIST = ImVec2(60.f * SCALE.x, 60.f * SCALE.y);
@@ -248,7 +249,7 @@ void draw_content_manager(GuiState &gui, HostState &host) {
     const auto POPUP_SIZE = ImVec2(756.0f * SCALE.x, 436.0f * SCALE.y);
 
     const auto is_background = gui.apps_background.find("NPXS10026") != gui.apps_background.end();
-    const auto is_12_hour_format = host.cfg.sys_time_format == SCE_SYSTEM_PARAM_TIME_FORMAT_12HOUR;
+    const auto is_12_hour_format = emuenv.cfg.sys_time_format == SCE_SYSTEM_PARAM_TIME_FORMAT_12HOUR;
 
     ImGui::SetNextWindowPos(ImVec2(0, INFORMATION_BAR_HEIGHT), ImGuiCond_Always);
     ImGui::SetNextWindowSize(WINDOW_SIZE, ImGuiCond_Always);
@@ -261,6 +262,11 @@ void draw_content_manager(GuiState &gui, HostState &host) {
         ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0.f, 0.f), display_size, IM_COL32(53.f, 54.f, 70.f, 255.f), 0.f, ImDrawCornerFlags_All);
 
     ImGui::SetWindowFontScale(1.5f * RES_SCALE.x);
+
+    auto lang = gui.lang.content_manager;
+    auto application = lang.application;
+    auto saved_data = lang.saved_data;
+    auto common = emuenv.common_dialog.lang.common;
 
     if (menu == "info") {
         ImGui::SetCursorPos(ImVec2(90.f * SCALE.x, 10.f * SCALE.y));
@@ -279,16 +285,16 @@ void draw_content_manager(GuiState &gui, HostState &host) {
         if (!menu.empty()) {
             if (((menu == "app") && !gui.app_selector.user_apps.empty()) || ((menu == "save") && !save_data_list.empty())) {
                 // Search Bar
-                const auto search_size = ImGui::CalcTextSize("Search");
+                const auto search_size = ImGui::CalcTextSize(lang.main["search"].c_str());
                 ImGui::SetCursorPos(ImVec2(20.f * SCALE.y, (32.f * SCALE.y) - (search_size.y / 2.f)));
-                ImGui::TextColored(GUI_COLOR_TEXT, "Search");
+                ImGui::TextColored(GUI_COLOR_TEXT, "%s", lang.main["search"].c_str());
                 ImGui::SameLine();
                 search_bar.Draw("##search_bar", 200 * SCALE.x);
             }
             // Free Space
             const auto scal_font = 19.2f / ImGui::GetFontSize();
-            ImGui::GetWindowDrawList()->AddText(gui.vita_font, 19.2f * SCALE.x, ImVec2((display_size.x - ((ImGui::CalcTextSize("Free Space").x * scal_font)) * SCALE.x) - (15.f * SCALE.x), 42.f * SCALE.y),
-                4294967295, "Free Space");
+            ImGui::GetWindowDrawList()->AddText(gui.vita_font, 19.2f * SCALE.x, ImVec2((display_size.x - ((ImGui::CalcTextSize(lang.main["free_space"].c_str()).x * scal_font)) * SCALE.x) - (15.f * SCALE.x), 42.f * SCALE.y),
+                4294967295, lang.main["free_space"].c_str());
             ImGui::GetWindowDrawList()->AddText(gui.vita_font, 19.2f * SCALE.x, ImVec2((display_size.x - ((ImGui::CalcTextSize(space["free"].c_str()).x * scal_font)) * SCALE.x) - (15.f * SCALE.x), 68.f * SCALE.y),
                 4294967295, space["free"].c_str());
         }
@@ -300,16 +306,14 @@ void draw_content_manager(GuiState &gui, HostState &host) {
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 10.f * SCALE.x);
     ImGui::BeginChild("##content_manager_child", menu == "info" ? SIZE_INFO : SIZE_LIST, false, ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
 
-    auto common = host.common_dialog.lang.common;
-
     if (menu.empty()) {
-        title = "Content Manager";
+        title = lang.main["title"];
         ImGui::SetWindowFontScale(1.2f);
         ImGui::Columns(2, nullptr, false);
         ImGui::SetColumnWidth(0, 630.f * SCALE.x);
         ImGui::PushStyleVar(ImGuiStyleVar_SelectableTextAlign, ImVec2(0.f, 0.5f));
         const auto SIZE_SELECT = 80.f * SCALE.y;
-        if (ImGui::Selectable("Applications", false, ImGuiSelectableFlags_SpanAllColumns, ImVec2(0.f, SIZE_SELECT)))
+        if (ImGui::Selectable(application["title"].c_str(), false, ImGuiSelectableFlags_SpanAllColumns, ImVec2(0.f, SIZE_SELECT)))
             menu = "app";
         ImGui::NextColumn();
         ImGui::SetWindowFontScale(0.8f);
@@ -317,7 +321,7 @@ void draw_content_manager(GuiState &gui, HostState &host) {
         ImGui::NextColumn();
         ImGui::Separator();
         ImGui::SetWindowFontScale(1.2f);
-        if (ImGui::Selectable("Saved Data", false, ImGuiSelectableFlags_SpanAllColumns, ImVec2(0.f, SIZE_SELECT)))
+        if (ImGui::Selectable(saved_data["title"].c_str(), false, ImGuiSelectableFlags_SpanAllColumns, ImVec2(0.f, SIZE_SELECT)))
             menu = "save";
         ImGui::NextColumn();
         ImGui::SetWindowFontScale(0.8f);
@@ -325,10 +329,10 @@ void draw_content_manager(GuiState &gui, HostState &host) {
         ImGui::NextColumn();
         ImGui::Separator();
         ImGui::SetWindowFontScale(1.2f);
-        if (ImGui::Selectable("Themes", false, ImGuiSelectableFlags_SpanAllColumns, ImVec2(0.f, SIZE_SELECT))) {
-            host.app_path = "NPXS10026";
+        if (ImGui::Selectable(lang.main["theme"].c_str(), false, ImGuiSelectableFlags_SpanAllColumns, ImVec2(0.f, SIZE_SELECT))) {
+            emuenv.app_path = "NPXS10026";
             gui.live_area.content_manager = false;
-            pre_run_app(gui, host, "NPXS10015");
+            pre_run_app(gui, emuenv, "NPXS10015");
         }
         ImGui::NextColumn();
         ImGui::SetWindowFontScale(0.8f);
@@ -338,7 +342,7 @@ void draw_content_manager(GuiState &gui, HostState &host) {
         ImGui::Separator();
         ImGui::SetWindowFontScale(1.2f);
         ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (25.f * SCALE.y));
-        ImGui::TextColored(GUI_COLOR_TEXT, "Free Space");
+        ImGui::TextColored(GUI_COLOR_TEXT, "%s", lang.main["free_space"].c_str());
         ImGui::NextColumn();
         ImGui::SetWindowFontScale(0.8f);
         ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (25.f * SCALE.y));
@@ -353,16 +357,16 @@ void draw_content_manager(GuiState &gui, HostState &host) {
             for (const auto &content : contents_selected) {
                 if (content.second) {
                     if (menu == "app") {
-                        fs::remove_all(fs::path(host.pref_path) / "ux0/app" / content.first);
-                        fs::remove_all(fs::path(host.pref_path) / "ux0/addcont" / content.first);
+                        fs::remove_all(fs::path(emuenv.pref_path) / "ux0/app" / content.first);
+                        fs::remove_all(fs::path(emuenv.pref_path) / "ux0/addcont" / content.first);
                         gui.app_selector.user_apps.erase(get_app_index(gui, content.first));
                         gui.app_selector.user_apps_icon.erase(content.first);
                     }
-                    const auto SAVE_PATH{ fs::path(host.pref_path) / "ux0/user" / host.io.user_id / "savedata" / content.first };
+                    const auto SAVE_PATH{ fs::path(emuenv.pref_path) / "ux0/user" / emuenv.io.user_id / "savedata" / content.first };
                     fs::remove_all(SAVE_PATH);
                 }
             }
-            init_content_manager(gui, host);
+            init_content_manager(gui, emuenv);
             contents_selected.clear();
             content_delete = false;
         }
@@ -378,16 +382,16 @@ void draw_content_manager(GuiState &gui, HostState &host) {
             ImGui::SetWindowFontScale(1.6f * RES_SCALE.x);
             ImGui::SetCursorPos(ImVec2(52.f * SCALE.x, 80.f * SCALE.y));
             ImGui::PushTextWrapPos(POPUP_SIZE.x);
-            ImGui::TextColored(GUI_COLOR_TEXT, menu == "app" ? "The selected applications and all related data, including saved data, will be deleted." : "The selected saved data items will be deleted");
+            ImGui::TextColored(GUI_COLOR_TEXT, "%s", menu == "app" ? application["delete"].c_str() : saved_data["delete"].c_str());
             ImGui::PopTextWrapPos();
             ImGui::SetCursorPos(ImVec2(106.f * SCALE.x, ImGui::GetCursorPosY() + (76.f * SCALE.y)));
-            ImGui::TextColored(GUI_COLOR_TEXT, "Data to be Deleted: %s", size_selected_contents.c_str());
+            ImGui::TextColored(GUI_COLOR_TEXT, "%s %s", gui.lang.game_data["data_delete"].c_str(), size_selected_contents.c_str());
             ImGui::SetCursorPos(ImVec2((POPUP_SIZE.x / 2) - (BUTTON_SIZE.x + (10.f * SCALE.x)), POPUP_SIZE.y - BUTTON_SIZE.y - (22.0f * SCALE.y)));
-            if (ImGui::Button(common["cancel"].c_str(), BUTTON_SIZE) || ImGui::IsKeyPressed(host.cfg.keyboard_button_circle)) {
+            if (ImGui::Button(common["cancel"].c_str(), BUTTON_SIZE) || ImGui::IsKeyPressed(emuenv.cfg.keyboard_button_circle)) {
                 popup = false;
             }
             ImGui::SameLine(0, 20.f * SCALE.x);
-            if (ImGui::Button("OK", BUTTON_SIZE) || ImGui::IsKeyPressed(host.cfg.keyboard_button_cross)) {
+            if (ImGui::Button("OK", BUTTON_SIZE) || ImGui::IsKeyPressed(emuenv.cfg.keyboard_button_cross)) {
                 content_delete = true;
                 popup = false;
             }
@@ -398,12 +402,13 @@ void draw_content_manager(GuiState &gui, HostState &host) {
 
         // Apps Menu
         if (menu == "app") {
-            title = "Applications";
+            title = application["title"];
             if (gui.app_selector.user_apps.empty()) {
                 ImGui::SetWindowFontScale(1.2f);
-                const auto calc_text = ImGui::CalcTextSize("There are no content items.");
+                auto no_item_str = application["no_item"].c_str();
+                const auto calc_text = ImGui::CalcTextSize(no_item_str);
                 ImGui::SetCursorPos(ImVec2((SIZE_LIST.x / 2.f) - (calc_text.x / 2.f), (SIZE_LIST.y / 2.f) - (calc_text.y / 2.f)));
-                ImGui::TextColored(GUI_COLOR_TEXT, "There are no content items.");
+                ImGui::TextColored(GUI_COLOR_TEXT, "%s", no_item_str);
             } else {
                 // Set Scroll Pos
                 if (set_scroll_pos) {
@@ -440,8 +445,8 @@ void draw_content_manager(GuiState &gui, HostState &host) {
                         scroll_pos = ImGui::GetScrollY();
                         ImGui::SetScrollY(0.f);
                         app_selected = app.path;
-                        get_app_info(gui, host, app_selected);
-                        get_content_info(gui, host);
+                        get_app_info(gui, emuenv, app_selected);
+                        get_content_info(gui, emuenv);
                         menu = "info";
                     }
                     ImGui::PopID();
@@ -453,12 +458,13 @@ void draw_content_manager(GuiState &gui, HostState &host) {
             }
             // Save Data Menu
         } else if (menu == "save") {
-            title = "Saved Data";
+            title = saved_data["title"];
             if (save_data_list.empty()) {
                 ImGui::SetWindowFontScale(1.2f);
-                const auto calc_text = ImGui::CalcTextSize("There is no saved data.");
+                auto no_savedata_str = saved_data["no_saved_data"].c_str();
+                const auto calc_text = ImGui::CalcTextSize(no_savedata_str);
                 ImGui::SetCursorPos(ImVec2((SIZE_LIST.x / 2.f) - (calc_text.x / 2.f), (SIZE_LIST.y / 2.f) - (calc_text.y / 2.f)));
-                ImGui::TextColored(GUI_COLOR_TEXT, "There is no saved data.");
+                ImGui::TextColored(GUI_COLOR_TEXT, "%s", no_savedata_str);
             } else {
                 ImGui::Columns(3, nullptr, false);
                 ImGui::SetColumnWidth(0, 60 * SCALE.x);
@@ -480,7 +486,7 @@ void draw_content_manager(GuiState &gui, HostState &host) {
                     ImGui::TextColored(GUI_COLOR_TEXT, "%s", save.title.c_str());
                     ImGui::SetWindowFontScale(0.8f);
                     ImGui::SetCursorPosY(Title_POS + (46.f * SCALE.y));
-                    auto DATE_TIME = get_date_time(gui, host, save.date);
+                    auto DATE_TIME = get_date_time(gui, emuenv, save.date);
                     ImGui::TextColored(GUI_COLOR_TEXT, "%s %s", DATE_TIME[DateTime::DATE_MINI].c_str(), DATE_TIME[DateTime::CLOCK].c_str());
                     if (is_12_hour_format) {
                         ImGui::SameLine();
@@ -495,30 +501,31 @@ void draw_content_manager(GuiState &gui, HostState &host) {
             }
         } else if (menu == "info") {
             // Information
+            auto info = gui.lang.app_context;
             const auto app_index = get_app_index(gui, app_selected);
             ImGui::SetWindowFontScale(1.f);
-            ImGui::TextColored(GUI_COLOR_TEXT, "Trophy Earning");
+            ImGui::TextColored(GUI_COLOR_TEXT, "%s", info["trophy_earning"].c_str());
             ImGui::SameLine(280.f * SCALE.x);
             ImGui::TextColored(GUI_COLOR_TEXT, "%s", gui.app_selector.app_info.trophy.c_str());
             ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (35.f * SCALE.y));
-            ImGui::TextColored(GUI_COLOR_TEXT, "Parental Controls");
+            ImGui::TextColored(GUI_COLOR_TEXT, "%s", info["parental_Controls"].c_str());
             ImGui::SameLine(280.f * SCALE.x);
-            ImGui::TextColored(GUI_COLOR_TEXT, "Level %d", *reinterpret_cast<const uint16_t *>(get_app_index(gui, app_selected)->parental_level.c_str()));
+            ImGui::TextColored(GUI_COLOR_TEXT, "%s %d", info["level"].c_str(), *reinterpret_cast<const uint16_t *>(get_app_index(gui, app_selected)->parental_level.c_str()));
             ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (35.f * SCALE.y));
-            ImGui::TextColored(GUI_COLOR_TEXT, "Updated");
+            ImGui::TextColored(GUI_COLOR_TEXT, "%s", info["updated"].c_str());
             ImGui::SameLine(280.f * SCALE.x);
-            auto DATE_TIME = get_date_time(gui, host, gui.app_selector.app_info.updated);
+            auto DATE_TIME = get_date_time(gui, emuenv, gui.app_selector.app_info.updated);
             ImGui::TextColored(GUI_COLOR_TEXT, "%s %s", DATE_TIME[DateTime::DATE_MINI].c_str(), DATE_TIME[DateTime::CLOCK].c_str());
             if (is_12_hour_format) {
                 ImGui::SameLine();
                 ImGui::TextColored(GUI_COLOR_TEXT, "%s", DATE_TIME[DateTime::DAY_MOMENT].c_str());
             }
             ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (35.f * SCALE.y));
-            ImGui::TextColored(GUI_COLOR_TEXT, "Size");
+            ImGui::TextColored(GUI_COLOR_TEXT, "%s", info["size"].c_str());
             ImGui::SameLine(280.f * SCALE.x);
             ImGui::TextColored(GUI_COLOR_TEXT, "%s", get_unit_size(gui.app_selector.app_info.size).c_str());
             ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (35.f * SCALE.y));
-            ImGui::TextColored(GUI_COLOR_TEXT, "Version");
+            ImGui::TextColored(GUI_COLOR_TEXT, "%s", info["version"].c_str());
             ImGui::SameLine(280.f * SCALE.x);
             ImGui::TextColored(GUI_COLOR_TEXT, "%s", get_app_index(gui, app_selected)->app_ver.c_str());
             for (const auto &addcont : addcont_info) {
@@ -531,16 +538,16 @@ void draw_content_manager(GuiState &gui, HostState &host) {
                 ImGui::TextColored(GUI_COLOR_TEXT, "%s", addcont.second.name.c_str());
                 ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (35.f * SCALE.y));
                 ImGui::SetWindowFontScale(1.f);
-                ImGui::TextColored(GUI_COLOR_TEXT, "Updated");
+                ImGui::TextColored(GUI_COLOR_TEXT, "%s", info["updated"].c_str());
                 ImGui::SameLine(280.f * SCALE.x);
-                auto DATE_TIME = get_date_time(gui, host, addcont.second.date);
+                auto DATE_TIME = get_date_time(gui, emuenv, addcont.second.date);
                 ImGui::TextColored(GUI_COLOR_TEXT, "%s %s", DATE_TIME[DateTime::DATE_MINI].c_str(), DATE_TIME[DateTime::CLOCK].c_str());
-                if (host.cfg.sys_time_format == SCE_SYSTEM_PARAM_TIME_FORMAT_12HOUR) {
+                if (emuenv.cfg.sys_time_format == SCE_SYSTEM_PARAM_TIME_FORMAT_12HOUR) {
                     ImGui::SameLine();
                     ImGui::TextColored(GUI_COLOR_TEXT, "%s", DATE_TIME[DateTime::DAY_MOMENT].c_str());
                 }
                 ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (35.f * SCALE.y));
-                ImGui::TextColored(GUI_COLOR_TEXT, "Size");
+                ImGui::TextColored(GUI_COLOR_TEXT, "%s", info["size"].c_str());
                 ImGui::SameLine(280.f * SCALE.x);
                 ImGui::TextColored(GUI_COLOR_TEXT, "%s", addcont.second.size.c_str());
             }
@@ -564,7 +571,7 @@ void draw_content_manager(GuiState &gui, HostState &host) {
                 if (!gui.apps_list_opened.empty() && gui.apps_list_opened[gui.current_app_selected] == "NPXS10026")
                     gui.live_area.live_area_screen = true;
                 else
-                    gui.live_area.app_selector = true;
+                    gui.live_area.home_screen = true;
                 gui.live_area.content_manager = false;
             }
         }
@@ -580,7 +587,7 @@ void draw_content_manager(GuiState &gui, HostState &host) {
         const auto state = std::any_of(std::begin(contents_selected), std::end(contents_selected), [&](const auto &c) { return !c.second; });
         ImGui::SetWindowFontScale(1.2f * RES_SCALE.x);
         ImGui::SetCursorPos(ImVec2(display_size.x - (450.f * SCALE.x), display_size.y - (88.f * SCALE.y)));
-        if (ImGui::Button(state ? common["select_all"].c_str() : "Clear All", ImVec2(224.f * SCALE.x, 44.f * SCALE.y))) {
+        if (ImGui::Button(state ? common["select_all"].c_str() : lang.main["clear_all"].c_str(), ImVec2(224.f * SCALE.x, 44.f * SCALE.y))) {
             for (auto &content : contents_selected) {
                 if (state)
                     content.second = true;
@@ -592,7 +599,7 @@ void draw_content_manager(GuiState &gui, HostState &host) {
         ImGui::SameLine();
         ImGui::SetWindowFontScale(1.5f * RES_SCALE.x);
         ImGui::PushStyleVar(ImGuiStyleVar_SelectableTextAlign, ImVec2(0.5f, 0.5f));
-        if (is_enable ? ImGui::Button(common["delete"].c_str(), ImVec2(202.f * SCALE.x, 44.f * SCALE.y)) && get_size_selected_contents(gui, host) : ImGui::Selectable(common["delete"].c_str(), false, ImGuiSelectableFlags_Disabled, ImVec2(194.f * SCALE.x, 36.f * SCALE.y)))
+        if (is_enable ? ImGui::Button(common["delete"].c_str(), ImVec2(202.f * SCALE.x, 44.f * SCALE.y)) && get_size_selected_contents(gui, emuenv) : ImGui::Selectable(common["delete"].c_str(), false, ImGuiSelectableFlags_Disabled, ImVec2(194.f * SCALE.x, 36.f * SCALE.y)))
             popup = true;
         ImGui::PopStyleVar();
     }

@@ -1,5 +1,5 @@
 // Vita3K emulator project
-// Copyright (C) 2021 Vita3K team
+// Copyright (C) 2022 Vita3K team
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -25,10 +25,9 @@
 namespace renderer {
 namespace texture {
 
-void palette_texture_to_rgba_4(uint32_t *dst, const uint8_t *src, size_t width, size_t height, const uint32_t *palette) {
+void palette_texture_to_rgba_4(uint32_t *dst, const uint8_t *src, size_t width, size_t height, const size_t stride, const uint32_t *palette) {
     R_PROFILE(__func__);
 
-    const size_t stride = ((width + 7) & ~7) / 2; // NOTE: This is correct only with linear textures.
     for (size_t y = 0; y < height; ++y) {
         uint32_t *const dst_row = &dst[y * width];
         const uint8_t *const src_row = &src[y * stride];
@@ -42,10 +41,9 @@ void palette_texture_to_rgba_4(uint32_t *dst, const uint8_t *src, size_t width, 
     }
 }
 
-void palette_texture_to_rgba_8(uint32_t *dst, const uint8_t *src, size_t width, size_t height, const uint32_t *palette) {
+void palette_texture_to_rgba_8(uint32_t *dst, const uint8_t *src, size_t width, size_t height, const size_t stride, const uint32_t *palette) {
     R_PROFILE(__func__);
 
-    const size_t stride = (width + 7) & ~7; // NOTE: This is correct only with linear textures.
     for (size_t y = 0; y < height; ++y) {
         uint32_t *const dst_row = &dst[y * width];
         const uint8_t *const src_row = &src[y * stride];

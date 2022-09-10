@@ -16,8 +16,11 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 #include "SceTouch.h"
+#include "SceTouch_tracy.h"
+#include "Tracy.hpp"
 
 #include <touch/functions.h>
+#include <touch/state.h>
 #include <touch/touch.h>
 
 EXPORT(int, sceTouchActivateRegion) {
@@ -53,6 +56,13 @@ EXPORT(int, sceTouchGetDeviceInfo) {
 }
 
 EXPORT(int, sceTouchGetPanelInfo, SceUInt32 port, SceTouchPanelInfo *pPanelInfo) {
+#ifdef TRACY_ENABLE
+    // --- Tracy logging --- START
+    bool _tracy_activation_state = config::is_tracy_advanced_profiling_active_for_module(emuenv.cfg.tracy_advanced_profiling_modules, tracy_module_name);
+    ZoneNamedN(___tracy_scoped_zone, "sceTouchGetPanelInfo", _tracy_activation_state);
+    tracy_sceTouchGetPanelInfo(&___tracy_scoped_zone, _tracy_activation_state, port, pPanelInfo);
+    // --- Tracy logging --- END
+#endif
     switch (port) {
     case SCE_TOUCH_PORT_FRONT:
         // Active Area
@@ -108,13 +118,20 @@ EXPORT(int, sceTouchGetProcessInfo) {
 }
 
 EXPORT(int, sceTouchGetSamplingState, SceUInt32 port, SceTouchSamplingState *pState) {
+#ifdef TRACY_ENABLE
+    // --- Tracy logging --- START
+    bool _tracy_activation_state = config::is_tracy_advanced_profiling_active_for_module(emuenv.cfg.tracy_advanced_profiling_modules, tracy_module_name);
+    ZoneNamedN(___tracy_scoped_zone, "sceTouchGetSamplingState", _tracy_activation_state);
+    tracy_sceTouchGetSamplingState(&___tracy_scoped_zone, _tracy_activation_state, port, pState);
+    // --- Tracy logging --- END
+#endif
     if (port >= SCE_TOUCH_PORT_MAX_NUM) {
         return RET_ERROR(SCE_TOUCH_ERROR_INVALID_ARG);
     }
     if (pState == nullptr) {
         return RET_ERROR(SCE_TOUCH_ERROR_INVALID_ARG);
     }
-    *pState = host.touch.touch_mode[port];
+    *pState = emuenv.touch.touch_mode[port];
     return 0;
 }
 
@@ -123,6 +140,13 @@ EXPORT(int, sceTouchGetSamplingStateExt) {
 }
 
 EXPORT(int, sceTouchPeek, SceUInt32 port, SceTouchData *pData, SceUInt32 nBufs) {
+#ifdef TRACY_ENABLE
+    // --- Tracy logging --- START
+    bool _tracy_activation_state = config::is_tracy_advanced_profiling_active_for_module(emuenv.cfg.tracy_advanced_profiling_modules, tracy_module_name);
+    ZoneNamedN(___tracy_scoped_zone, "sceTouchPeek", _tracy_activation_state);
+    tracy_sceTouchPeek(&___tracy_scoped_zone, _tracy_activation_state, port, pData, nBufs);
+    // --- Tracy logging --- END
+#endif
     if (port >= SCE_TOUCH_PORT_MAX_NUM) {
         return RET_ERROR(SCE_TOUCH_ERROR_INVALID_ARG);
     }
@@ -130,10 +154,17 @@ EXPORT(int, sceTouchPeek, SceUInt32 port, SceTouchData *pData, SceUInt32 nBufs) 
         return RET_ERROR(SCE_TOUCH_ERROR_INVALID_ARG);
     }
 
-    return peek_touch(host, port, pData, nBufs);
+    return touch_get(thread_id, emuenv, port, pData, nBufs, true);
 }
 
 EXPORT(int, sceTouchPeek2, SceUInt32 port, SceTouchData *pData, SceUInt32 nBufs) {
+#ifdef TRACY_ENABLE
+    // --- Tracy logging --- START
+    bool _tracy_activation_state = config::is_tracy_advanced_profiling_active_for_module(emuenv.cfg.tracy_advanced_profiling_modules, tracy_module_name);
+    ZoneNamedN(___tracy_scoped_zone, "sceTouchPeek2", _tracy_activation_state);
+    tracy_sceTouchPeek2(&___tracy_scoped_zone, _tracy_activation_state, port, pData, nBufs);
+    // --- Tracy logging --- END
+#endif
     if (port >= SCE_TOUCH_PORT_MAX_NUM) {
         return RET_ERROR(SCE_TOUCH_ERROR_INVALID_ARG);
     }
@@ -141,7 +172,7 @@ EXPORT(int, sceTouchPeek2, SceUInt32 port, SceTouchData *pData, SceUInt32 nBufs)
         return RET_ERROR(SCE_TOUCH_ERROR_INVALID_ARG);
     }
 
-    return peek_touch(host, port, pData, nBufs);
+    return touch_get(thread_id, emuenv, port, pData, nBufs, true);
 }
 
 EXPORT(int, sceTouchPeekRegion) {
@@ -153,17 +184,30 @@ EXPORT(int, sceTouchPeekRegionExt) {
 }
 
 EXPORT(int, sceTouchRead, SceUInt32 port, SceTouchData *pData, SceUInt32 nBufs) {
+#ifdef TRACY_ENABLE
+    // --- Tracy logging --- START
+    bool _tracy_activation_state = config::is_tracy_advanced_profiling_active_for_module(emuenv.cfg.tracy_advanced_profiling_modules, tracy_module_name);
+    ZoneNamedN(___tracy_scoped_zone, "sceTouchRead", _tracy_activation_state);
+    tracy_sceTouchRead(&___tracy_scoped_zone, _tracy_activation_state, port, pData, nBufs);
+    // --- Tracy logging --- END
+#endif
     if (port >= SCE_TOUCH_PORT_MAX_NUM) {
         return RET_ERROR(SCE_TOUCH_ERROR_INVALID_ARG);
     }
     if (pData == nullptr) {
         return RET_ERROR(SCE_TOUCH_ERROR_INVALID_ARG);
     }
-
-    return peek_touch(host, port, pData, nBufs);
+    return touch_get(thread_id, emuenv, port, pData, nBufs, false);
 }
 
 EXPORT(int, sceTouchRead2, SceUInt32 port, SceTouchData *pData, SceUInt32 nBufs) {
+#ifdef TRACY_ENABLE
+    // --- Tracy logging --- START
+    bool _tracy_activation_state = config::is_tracy_advanced_profiling_active_for_module(emuenv.cfg.tracy_advanced_profiling_modules, tracy_module_name);
+    ZoneNamedN(___tracy_scoped_zone, "sceTouchRead2", _tracy_activation_state);
+    tracy_sceTouchRead2(&___tracy_scoped_zone, _tracy_activation_state, port, pData, nBufs);
+    // --- Tracy logging --- END
+#endif
     if (port >= SCE_TOUCH_PORT_MAX_NUM) {
         return RET_ERROR(SCE_TOUCH_ERROR_INVALID_ARG);
     }
@@ -171,7 +215,7 @@ EXPORT(int, sceTouchRead2, SceUInt32 port, SceTouchData *pData, SceUInt32 nBufs)
         return RET_ERROR(SCE_TOUCH_ERROR_INVALID_ARG);
     }
 
-    return peek_touch(host, port, pData, nBufs);
+    return touch_get(thread_id, emuenv, port, pData, nBufs, false);
 }
 
 EXPORT(int, sceTouchReadRegion) {
@@ -195,13 +239,20 @@ EXPORT(int, sceTouchSetRegionAttr) {
 }
 
 EXPORT(int, sceTouchSetSamplingState, SceUInt32 port, SceTouchSamplingState state) {
+#ifdef TRACY_ENABLE
+    // --- Tracy logging --- START
+    bool _tracy_activation_state = config::is_tracy_advanced_profiling_active_for_module(emuenv.cfg.tracy_advanced_profiling_modules, tracy_module_name);
+    ZoneNamedN(___tracy_scoped_zone, "sceTouchSetSamplingState", _tracy_activation_state);
+    tracy_sceTouchSetSamplingState(&___tracy_scoped_zone, _tracy_activation_state, port, state);
+    // --- Tracy logging --- END
+#endif
     if (port >= SCE_TOUCH_PORT_MAX_NUM) {
         return RET_ERROR(SCE_TOUCH_ERROR_INVALID_ARG);
     }
     if (state != SCE_TOUCH_SAMPLING_STATE_STOP && state != SCE_TOUCH_SAMPLING_STATE_START) {
         return RET_ERROR(SCE_TOUCH_ERROR_INVALID_ARG);
     }
-    host.touch.touch_mode[port] = state;
+    emuenv.touch.touch_mode[port] = state;
     return 0;
 }
 

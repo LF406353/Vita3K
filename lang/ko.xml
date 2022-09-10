@@ -1,8 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
 
 <lang>
+	<main_menubar>
+		<file name="File">
+			<open_pref_path>Open Pref Path</open_pref_path>
+			<install_firmware>Install Firmware</install_firmware>
+			<install_pkg>Install .pkg</install_pkg>
+			<install_zip>Install .zip, .vpk</install_zip>
+			<install_license>Install License</install_license>
+		</file>
+		<emulation name="Emulation">
+			<last_apps_used>Last Apps used</last_apps_used>
+		</emulation>
+		<configuration name="Configuration">
+			<settings>Settings</settings>
+			<user_management>User Management</user_management>
+		</configuration>
+		<controls name="Controls">
+			<keyboard_controls>Keyboard Controls</keyboard_controls>
+		</controls>
+		<help name="Help">
+			<welcome>Welcome</welcome>
+		</help>
+	</main_menubar>
+
 	<app_context>
 		<update_history>업데이트 이력</update_history>
+		<history_version>버전 {}</history_version>
 		<information>정보</information>
 		<app_delete>이 애플리케이션 및 모든 관련 데이터(저장 데이터 포함)를 삭제합니다.</app_delete>
 		<save_delete>이 저장 데이터를 삭제하시겠습니까?</save_delete>
@@ -63,6 +87,74 @@
 			<month>11월</month>
 			<month>12월</month>
 		</small_ymonth>
+		<mday>
+			<days></days>
+			<days>1일</days>
+			<days>2일</days>
+			<days>3일</days>
+			<days>4일</days>
+			<days>5일</days>
+			<days>6일</days>
+			<days>7일</days>
+			<days>8일</days>
+			<days>9일</days>
+			<days>10일</days>
+			<days>11일</days>
+			<days>12일</days>
+			<days>13일</days>
+			<days>14일</days>
+			<days>15일</days>
+			<days>16일</days>
+			<days>17일</days>
+			<days>18일</days>
+			<days>19일</days>
+			<days>20일</days>
+			<days>21일</days>
+			<days>22일</days>
+			<days>23일</days>
+			<days>24일</days>
+			<days>25일</days>
+			<days>26일</days>
+			<days>27일</days>
+			<days>28일</days>
+			<days>29일</days>
+			<days>30일</days>
+			<days>31일</days>
+		</mday>
+		<small_mday>
+			<days></days>
+			<days>1일</days>
+			<days>2일</days>
+			<days>3일</days>
+			<days>4일</days>
+			<days>5일</days>
+			<days>6일</days>
+			<days>7일</days>
+			<days>8일</days>
+			<days>9일</days>
+			<days>10일</days>
+			<days>11일</days>
+			<days>12일</days>
+			<days>13일</days>
+			<days>14일</days>
+			<days>15일</days>
+			<days>16일</days>
+			<days>17일</days>
+			<days>18일</days>
+			<days>19일</days>
+			<days>20일</days>
+			<days>21일</days>
+			<days>22일</days>
+			<days>23일</days>
+			<days>24일</days>
+			<days>25일</days>
+			<days>26일</days>
+			<days>27일</days>
+			<days>28일</days>
+			<days>29일</days>
+			<days>30일</days>
+			<days>31일</days>
+		</small_mday>
 		<hidden_trophy>숨겨진 트로피</hidden_trophy>
 		<one_hour_ago>1 시간 전</one_hour_ago>
 		<one_minute_ago>1 분 전</one_minute_ago>
@@ -73,6 +165,20 @@
 		<hours_ago>{} 시간 전</hours_ago>
 		<minutes_ago>{} 분 전</minutes_ago>
 	</common>
+
+	<content_manager name="콘텐츠 관리">
+		<application name="애플리케이션">
+			<delete>선택한 애플리케이션 및 모든 관련 데이터(저장 데이터 포함)를 삭제합니다.</delete>
+			<no_item>콘텐츠가 없습니다.</no_item>
+		</application>
+		<saved_data name="저장 데이터">
+			<delete>선택한 세이브 데이터를 삭제합니다.</delete>
+			<no_saved_data>저장 데이터가 없습니다.</no_saved_data>
+		</saved_data>
+		<theme>테마</theme>
+		<free_space>빈 용량</free_space>
+		<clear_all>모두 해제</clear_all>
+	</content_manager>
 
 	<dialog>
 		<trophy>
@@ -113,6 +219,7 @@
 
 	<game_data>
 		<app_close>아래의 애플리케이션을 종료합니다.</app_close>
+		<data_delete>삭제된 데이터:</data_delete>
 	</game_data>
 
 	<indicator>
@@ -143,6 +250,7 @@ Your Vita3K system is ready!</completed_setup>
 		<theme_background name="테마 & 배경">
 			<default>오리지널</default>
 			<theme name="테마">
+				<find_in_altervista>Altervista에서 찾기</find_in_altervista>
 				<information name="정보">
 					<name>이름</name>
 					<provider>제공자</provider>
@@ -155,7 +263,10 @@ Your Vita3K system is ready!</completed_setup>
 			<start_screen name="시작 화면">
 				<image>이미지</image>
 			</start_screen>
-			<home_screen_backgrounds>홈 화면의 배경</home_screen_backgrounds>
+			<home_screen_backgrounds name="홈 화면의 배경">
+				<delete_background>Delete Background</delete_background>
+				<add_background>Add Background</add_background>
+			</home_screen_backgrounds>
 		</theme_background>
 		<date_time name="날짜 & 시각">
 			<date_format name ="날짜 표시 형식">
@@ -172,7 +283,7 @@ Your Vita3K system is ready!</completed_setup>
 			<system_language>시스템 언어</system_language>
 			<input_language name="입력 언어">
 				<keyboards name="키보드">
-					<ime_langagues>
+					<ime_languages>
 						<lang id="1">덴마크어</lang>
 						<lang id="2">독일어</lang>
 						<lang id="262144">영어 (영국)</lang>
@@ -189,7 +300,7 @@ Your Vita3K system is ready!</completed_setup>
 						<lang id="2048">핀란드어</lang>
 						<lang id="4096">스웨덴어</lang>
 						<lang id="524288">터키어</lang>
-					</ime_langagues>
+					</ime_languages>
 				</keyboards>
 			</input_language>
 		</language>
@@ -209,4 +320,25 @@ Your Vita3K system is ready!</completed_setup>
 		<progress>달성률</progress>
 		<updated>갱신일</updated>
 	</trophy_collection>
+
+	<user_management>
+		<select_user>Select your user</select_user>
+		<create_user>Create User</create_user>
+		<user_created>The following user has been created.</user_created>
+		<edit_user>Edit User</edit_user>
+		<user_name_used>This name is already in use.</user_name_used>
+		<delete_user>Delete User</delete_user>
+		<user_delete>Select the user you want to delete.</user_delete>
+		<user_delete_msg>The following user will be deleted.</user_delete_msg>
+		<user_delete_message>If you delete the user, that user's saved data, trophies will be deleted.</user_delete_message>
+		<user_delete_warn>The user will be deleted.
+Are you sure you want to continue?</user_delete_warn>
+		<user_deleted>User deleted.</user_deleted>
+		<change_avatar>Change Avatar</change_avatar>
+		<reset_avatar>Reset Avatar</reset_avatar>
+		<name>Name</name>
+		<user>User</user>
+		<confirm>Confirm</confirm>
+		<automatic_user_login>Automatic User Login</automatic_user_login>
+	</user_management>
 </lang>

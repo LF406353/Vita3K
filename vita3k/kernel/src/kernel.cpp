@@ -15,6 +15,10 @@
 // with this program; if not, write to the Free Software Foundation, Inc.,
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
+#ifdef TRACY_ENABLE
+#include "Tracy.hpp"
+#endif
+
 #include <kernel/state.h>
 
 #include <kernel/thread/thread_state.h>
@@ -59,6 +63,15 @@ static int SDLCALL thread_function(void *data) {
     const ThreadParams params = *static_cast<const ThreadParams *>(data);
     SDL_SemPost(params.host_may_destroy_params.get());
     const ThreadStatePtr thread = lock_and_find(params.thid, params.kernel->threads, params.kernel->mutex);
+#ifdef TRACY_ENABLE
+    if (!thread->name.empty()) {
+        tracy::SetThreadName(thread->name.c_str());
+    } else {
+        std::string th_name = "TID:" + std::to_string(thread->id);
+        tracy::SetThreadName(th_name.c_str());
+    }
+#endif
+
     thread->run_loop();
     const uint32_t r0 = read_reg(*thread->cpu, 0);
     thread->returned_value = r0;
@@ -125,12 +138,12 @@ ThreadStatePtr KernelState::get_thread(SceUID thread_id) {
 
 ThreadStatePtr KernelState::create_thread(MemState &mem, const char *name) {
     constexpr size_t DEFAULT_STACK_SIZE = 0x1000;
-    return create_thread(mem, name, Ptr<void>(0), SCE_KERNEL_DEFAULT_PRIORITY, DEFAULT_STACK_SIZE, nullptr);
+    return create_thread(mem, name, Ptr<void>(0), SCE_KERNEL_DEFAULT_PRIORITY, SCE_KERNEL_THREAD_CPU_AFFINITY_MASK_DEFAULT, DEFAULT_STACK_SIZE, nullptr);
 }
 
-ThreadStatePtr KernelState::create_thread(MemState &mem, const char *name, Ptr<const void> entry_point, int init_priority, int stack_size, const SceKernelThreadOptParam *option) {
+ThreadStatePtr KernelState::create_thread(MemState &mem, const char *name, Ptr<const void> entry_point, int init_priority, SceInt32 affinity_mask, int stack_size, const SceKernelThreadOptParam *option) {
     ThreadStatePtr thread = std::make_shared<ThreadState>(get_next_uid(), mem);
-    if (thread->init(*this, name, entry_point, init_priority, stack_size, option) < 0)
+    if (thread->init(*this, name, entry_point, init_priority, affinity_mask, stack_size, option) < 0)
         return nullptr;
     const auto lock = std::lock_guard(mutex);
     threads.emplace(thread->id, thread);
@@ -173,8 +186,19 @@ void KernelState::exit_delete_all_threads() {
     }
 }
 
-int KernelState::run_guest_function(Address callback_address, const std::vector<uint32_t> &args) {
-    return this->guest_func_runner->run_guest_function(callback_address, args);
+int KernelState::run_guest_function(SceUID thread_id, Address callback_address, const std::vector<uint32_t> &args) {
+    auto old_thread_id = this->guest_func_runner->id;
+    auto old_tpidruro = read_tpidruro(*this->guest_func_runner->cpu);
+    auto thread = get_thread(thread_id);
+    if (thread) {
+        auto tpidruro = read_tpidruro(*thread->cpu);
+        this->guest_func_runner->id = thread_id;
+        write_tpidruro(*this->guest_func_runner->cpu, tpidruro);
+    }
+    int result = this->guest_func_runner->run_guest_function(callback_address, args);
+    this->guest_func_runner->id = old_thread_id;
+    write_tpidruro(*this->guest_func_runner->cpu, old_tpidruro);
+    return result;
 }
 
 std::shared_ptr<SceKernelModuleInfo> KernelState::find_module_by_addr(Address address) {

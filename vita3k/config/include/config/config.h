@@ -58,14 +58,21 @@ enum PerfomanceOverleyPosition {
     code(bool, "show-live-area-screen", true, show_live_area_screen)                                    \
     code(int, "icon-size", 64, icon_size)                                                               \
     code(bool, "archive-log", false, archive_log)                                                       \
+    code(std::string, "backend-renderer", "OpenGL", backend_renderer)                                   \
+    code(int, "gpu-idx", 0, gpu_idx)                                                                    \
+    code(int, "resolution-multiplier", 1, resolution_multiplier)                                        \
+    code(bool, "disable-surface-sync", false, disable_surface_sync)                                     \
+    code(bool, "enable-fxaa", false, enable_fxaa)                                                       \
+    code(bool, "v-sync", true, v_sync)                                                                  \
+    code(int, "anisotropic-filtering", 1, anisotropic_filtering)                                        \
     code(bool, "texture-cache", true, texture_cache)                                                    \
-    code(bool, "hashless-texture-cache", false, hashless_taexture_cache)                                \
-    code(bool, "disable-ngs", false, disable_ngs)                                                       \
+    code(bool, "hashless-texture-cache", false, hashless_texture_cache)                                 \
+    code(bool, "boot-apps-full-screen", false, boot_apps_full_screen)                                   \
+    code(bool, "ngs-enable", true, ngs_enable)                                                          \
     code(int, "sys-button", static_cast<int>(SCE_SYSTEM_PARAM_ENTER_BUTTON_CROSS), sys_button)          \
     code(int, "sys-lang", static_cast<int>(SCE_SYSTEM_PARAM_LANG_ENGLISH_US), sys_lang)                 \
     code(int, "sys-date-format", (int)SCE_SYSTEM_PARAM_DATE_FORMAT_MMDDYYYY, sys_date_format)           \
     code(int, "sys-time-format", (int)SCE_SYSTEM_PARAM_TIME_FORMAT_12HOUR, sys_time_format)             \
-    code(bool, "lle-driver-user", false, lle_driver_user)                                               \
     code(int, "cpu-pool-size", 10, cpu_pool_size)                                                       \
     code(int, "modules-mode", static_cast<int>(ModulesMode::AUTOMATIC), modules_mode)                   \
     code(int, "delay-background", 4, delay_background)                                                  \
@@ -81,7 +88,6 @@ enum PerfomanceOverleyPosition {
     code(bool, "performance-overlay", false, performance_overlay)                                       \
     code(int, "perfomance-overlay-detail", static_cast<int>(MINIMUM), performance_overlay_detail)       \
     code(int, "perfomance-overlay-position", static_cast<int>(TOP_LEFT), performance_overlay_position)  \
-    code(std::string, "backend-renderer", "OpenGL", backend_renderer)                                   \
     code(int, "keyboard-button-select", 229, keyboard_button_select)                                    \
     code(int, "keyboard-button-start", 40, keyboard_button_start)                                       \
     code(int, "keyboard-button-up", 82, keyboard_button_up)                                             \
@@ -112,11 +118,10 @@ enum PerfomanceOverleyPosition {
     code(bool, "dump-textures", false, dump_textures)                                                   \
     code(bool, "show-welcome", true, show_welcome)                                                      \
     code(bool, "asia-font-support", false, asia_font_support)                                           \
-    code(bool, "video-playing", true, video_playing)                                                    \
     code(bool, "shader-cache", true, shader_cache)                                                      \
     code(bool, "spirv-shader", false, spirv_shader)                                                     \
     code(uint64_t, "current-ime-lang", 4, current_ime_lang)                                             \
-    code(bool, "disable-at9-decoder", false, disable_at9_decoder)
+    code(bool, "tracy-primitive-impl", false, tracy_primitive_impl)
 
 // Vector members produced in the config file
 // Order is code(option_type, option_name, default_value)
@@ -124,7 +129,8 @@ enum PerfomanceOverleyPosition {
 // When adding in a new macro for generation, ALL options must be stated.
 #define CONFIG_VECTOR(code)                                                                             \
     code(std::vector<std::string>, "lle-modules", std::vector<std::string>{}, lle_modules)              \
-    code(std::vector<uint64_t>, "ime-langs", std::vector<uint64_t>{4}, ime_langs)
+    code(std::vector<uint64_t>, "ime-langs", std::vector<uint64_t>{4}, ime_langs)                       \
+    code(std::vector<std::string>, "tracy-advanced-profiling-modules", std::vector<std::string>{}, tracy_advanced_profiling_modules)
 
 // Parent macro for easier generation
 #define CONFIG_LIST(code)                                                                               \

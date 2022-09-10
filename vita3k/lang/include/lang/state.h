@@ -100,34 +100,58 @@ struct LangState {
             { "install_firmware", "Install Firmware" },
             { "install_pkg", "Install .pkg" },
             { "install_zip", "Install .zip, .vpk" },
-            { "install_license", "Install License" },
+            { "install_license", "Install License" }
         };
         std::map<std::string, std::string> emulation = {
             { "title", "Emulation" },
-            { "last_apps_used", "Last Apps used" },
+            { "last_apps_used", "Last Apps used" }
         };
         std::map<std::string, std::string> configuration = {
             { "title", "Configuration" },
             { "settings", "Settings" },
-            { "user_management", "User Management" },
+            { "user_management", "User Management" }
         };
         std::map<std::string, std::string> controls = {
             { "title", "Controls" },
-            { "keyboard_controls", "Keyboard Controls" },
-            { "controllers", "Controllers" },
+            { "keyboard_controls", "Keyboard Controls" }
         };
         std::map<std::string, std::string> help = {
             { "title", "Help" },
-            { "about", "About" },
             { "welcome", "Welcome" }
         };
     };
     MainMenubar main_menubar;
+    std::map<std::string, std::string> about = {
+        { "title", "About" },
+        { "vita3k", "Vita3K: a PS Vita/PS TV Emulator. The world's first functional PS Vita/PS TV emulator." },
+        { "about_vita3k", "Vita3K is an experimental open-source PlayStation Vita/PlayStation TV emulator written in C++ for Windows and Linux operating systems." },
+        { "note", "Note: The emulator is still in a very early stage of development." },
+        { "github_website", "If you're interested in contributing, check out our GitHub:" },
+        { "vita3k_website", "Visit our website for more info:" },
+        { "vita3k_staff", "Vita3K Staff" },
+        { "developers", "Developers" },
+        { "contributors", "Contributors" }
+    };
     std::map<std::string, std::string> app_context = {
+        { "boot", "Boot" },
+        { "check_app_compatibility", "Check App Compatibility" },
+        { "copy_app_info", "Copy App Info" },
+        { "id_and_name", "ID and Name" },
+        { "custom_config", "Custom Config" },
+        { "create", "Create" },
+        { "edit", "Edit" },
+        { "remove", "Remove" },
+        { "open_folder", "Open Folder" },
+        { "addcont", "DLCs" },
+        { "license", "License" },
+        { "shader_cache", "Shader Cache" },
+        { "shader_log", "Shader Log" },
         { "update_history", "Update History" },
+        { "history_version", "Version {}" },
         { "information", "Information" },
         { "app_delete", "This application and all related data, including saved data, will be deleted." },
-        { "save_delete", "Do you want to delete this saved data ?" },
+        { "app_delete_note", "Deleting a application may take a while\ndepending on its size and your hardware." },
+        { "save_delete", "Do you want to delete this saved data?" },
         { "eligible", "Eligible" },
         { "ineligible", "Ineligible" },
         { "level", "Level" },
@@ -141,8 +165,90 @@ struct LangState {
         { "never", "Never" },
         { "time_used", "Time used" }
     };
+    struct ContentManager {
+        std::map<std::string, std::string> main = {
+            { "title", "Content Manager" },
+            { "search", "Search" },
+            { "theme", "Themes" },
+            { "free_space", "Free Space" },
+            { "clear_all", "Clear All" }
+        };
+        std::map<std::string, std::string> application = {
+            { "title", "Application" },
+            { "delete", "The selected applications and all related data, including saved data, will be deleted." },
+            { "no_item", "There are no content items." }
+        };
+        std::map<std::string, std::string> saved_data = {
+            { "title", "Saved Data" },
+            { "delete", "The selected saved data items will be deleted." },
+            { "no_saved_data", "There is no saved data." }
+        };
+    };
+    ContentManager content_manager;
+    std::map<std::string, std::string> controllers = {
+        { "title", "Controllers" },
+        { "connected", "Controllers connected" },
+        { "name", "Name" },
+        { "num", "Num" },
+        { "not_connected", "No compatible controllers connected.\nConnect a controller that is compatible with SDL2." }
+    };
+    std::map<std::string, std::string> controls = {
+        { "title", "Controls" },
+        { "button", "Button" },
+        { "mapped_button", "Mapped button" },
+        { "left_stick_up", "Left stick up" },
+        { "left_stick_down", "Left stick down" },
+        { "left_stick_right", "Left stick right" },
+        { "left_stick_left", "Left stick left" },
+        { "right_stick_up", "Right stick up" },
+        { "right_stick_down", "Right stick down" },
+        { "right_stick_right", "Right stick right" },
+        { "right_stick_left", "Right stick left" },
+        { "d_pad_up", "D-pad up" },
+        { "d_pad_down", "D-pad down" },
+        { "d_pad_right", "D-pad right" },
+        { "d_pad_left", "D-pad left" },
+        { "square_button", "Square button" },
+        { "cross_button", "Cross button" },
+        { "circle_button", "Circle button" },
+        { "triangle_button", "Triangle button" },
+        { "start_button", "Start button" },
+        { "select_button", "Select button" },
+        { "ps_button", "PS button" },
+        { "l1_button", "L1 button" },
+        { "r1_button", "R1 button" },
+        { "ps_tv_mode", "Only in PS TV mode." },
+        { "l2_button", "L2 button" },
+        { "r2_button", "R2 button" },
+        { "l3_button", "L3 button" },
+        { "r3_button", "R3 button" },
+        { "gui", "GUI" },
+        { "full_screen", "Full Screen" },
+        { "toggle_touch", "Toggle Touch" },
+        { "toggle_gui_visibility", "Toggle GUI Visibility" }
+    };
     std::map<std::string, std::string> game_data = {
-        { "app_close", "The following application will close." }
+        { "app_close", "The following application will close." },
+        { "data_delete", "Data to be Deleted:" }
+    };
+    std::map<std::string, std::string> home_screen = {
+        { "filter", "Filter" },
+        { "sort_app", "Sort Apps By" },
+        { "all", "All" },
+        { "by_region", "By Region" },
+        { "usa", "USA" },
+        { "europe", "Europe" },
+        { "japan", "Japan" },
+        { "asia", "ASIA" },
+        { "by_type", "By Type" },
+        { "commercial", "Commercial" },
+        { "homebrew", "Homebrew" },
+        { "ver", "Ver" },
+        { "cat", "Cat" },
+        { "last_time", "Last Time" },
+        { "tit", "Title" },
+        { "tit_id", "Title ID" },
+        { "refresh", "Refresh" }
     };
     std::map<std::string, std::string> indicator = {
         { "app_added_home", "The application has been added to the home screen." },
@@ -156,21 +262,56 @@ struct LangState {
     };
     std::map<std::string, std::string> initial_setup = {
         { "back", "Back" },
-        { "completed_setup", "You have now completed initial setup.\nYour Vita3K system is ready !" },
+        { "completed_setup", "You have now completed initial setup.\nYour Vita3K system is ready!" },
         { "select_language", "Select a language" },
+        { "completed", "Completed." },
         { "next", "Next" }
+    };
+    std::map<std::string, std::string> install_dialog = {
+        { "fw_installing", "Installation in progress, please wait..." },
+        { "successed_install_fw", "Firmware successfully installed." },
+        { "fw_version", "Firmware version:" },
+        { "no_font_exist", "No firmware font package present.\nPlease download and install it." },
+        { "download_firmware_font_package", "Download Firmware Font Package" },
+        { "firmware_font_package_note", "Firmware font package is mandatory for some applications and also for Asian regional font support. (Generally Recommended)" },
+        { "delete_fw", "Delete the firmware installation file?" },
+        { "select_key_type", "Select key type" },
+        { "select_work", "Select work.bin" },
+        { "enter_zrif", "Enter zRIF" },
+        { "enter_zrif_key", "Enter zRIF key" },
+        { "input_zrif", "Please input your zRIF here" },
+        { "copy_paste_zrif", "Ctrl(Cmd) + C to copy, Ctrl(Cmd) + V to paste." },
+        { "delete_pkg", "Delete the pkg file?" },
+        { "delete_work", "Delete the work.bin file?" },
+        { "check_log", "Please check log for more details." },
+        { "select_install_type", "Select install type" },
+        { "select_file", "Select File" },
+        { "select_directory", "Select Directory" },
+        { "compatible_content", "{} archive(s) found with compatible contents." },
+        { "successed_install_archive", "{} archive(s) contents successfully installed:" },
+        { "update_app", "Update App to:" },
+        { "failed_install_archive", "Failed to install {} archive(s) contents:" },
+        { "not_compatible_content", "No compatible content found in {} archive(s):" },
+        { "delete_archive", "Delete archive?" },
+        { "select_license_type", "Select license type" },
+        { "select_bin_rif", "Select work.bin/rif" },
+        { "successed_install_license", "Successfully installed license." },
+        { "content_id", "Content ID:" },
+        { "title_id", "Title ID:" },
+        { "delete_bin_rif", "Delete the work.bin/rif file?" }
     };
     struct Settings {
         std::map<std::string, std::string> main = { { "title", "Settings" } };
         struct ThemeBackground {
             std::map<std::string, std::string> main = {
                 { "title", "Theme & Background" },
-                { "default", "Default" },
-                { "home_screen_backgrounds", "Home Screen Backgrounds" }
+                { "default", "Default" }
             };
             struct Theme {
                 std::map<std::string, std::string> main = {
                     { "title", "Theme" },
+                    { "search", "Search" },
+                    { "find_in_altervista", "Find in Altervista" },
                     { "delete", "This theme will be deleted." }
                 };
                 std::map<std::string, std::string> information = {
@@ -179,13 +320,19 @@ struct LangState {
                     { "provider", "Provider" },
                     { "updated", "Updated" },
                     { "size", "Size" },
-                    { "version", "Version" }
+                    { "version", "Version" },
+                    { "content_id", "Content ID" }
                 };
             };
             Theme theme;
             std::map<std::string, std::string> start_screen = {
                 { "title", "Start Screen" },
                 { "image", "Image" }
+            };
+            std::map<std::string, std::string> home_screen_backgrounds = {
+                { "title", "Home Screen Backgrounds" },
+                { "delete_background", "Delete Background" },
+                { "add_background", "Add Background" }
             };
         };
         ThemeBackground theme_background;
@@ -209,13 +356,16 @@ struct LangState {
                 { "title", "Language" },
                 { "system_language", "System Language" }
             };
-            std::map<std::string, std::string> input_langague = { { "title", "Input Languages" } };
-            std::map<std::string, std::string> Keyboards = { { "title", "Keyboards" } };
+            std::map<std::string, std::string> input_language = { { "title", "Input Languages" } };
+            std::map<std::string, std::string> keyboards = { { "title", "Keyboards" } };
         };
         Language language;
     };
     Settings settings;
     std::map<std::string, std::string> trophy_collection = {
+        { "search", "Search" },
+        { "delete_trophy", "Delete Trophy" },
+        { "trophy_deleted", "This trophy information saved on this user will be deleted." },
         { "details", "Details" },
         { "earned", "Earned" },
         { "name", "Name" },
@@ -231,9 +381,9 @@ struct LangState {
     std::map<std::string, std::string> user_management = {
         { "select_user", "Select your user" },
         { "create_user", "Create User" },
-        { "user_created", "The following user has been created" },
+        { "user_created", "The following user has been created." },
         { "edit_user", "Edit User" },
-        { "user_name_used", "! This name is already in use." },
+        { "user_name_used", "This name is already in use." },
         { "delete_user", "Delete User" },
         { "user_delete", "Select the user you want to delete." },
         { "user_delete_msg", "The following user will be deleted." },
@@ -245,11 +395,40 @@ struct LangState {
         { "name", "Name" },
         { "user", "User" },
         { "confirm", "Confirm" },
-        { "cancel", "Cancel" },
-        { "delete", "Delete" },
-        { "yes", "Yes" },
-        { "no", "No" },
-        { "automatic_user_login", "Automatic User Login" },
+        { "automatic_user_login", "Automatic User Login" }
+    };
+    std::map<std::string, std::string> vita3k_update = {
+        { "title", "Vita3K Update" },
+        { "new_version_available", "A new version of Vita3K is available." },
+        { "back", "Back" },
+        { "downloading", "Downloading...\nAfter the download is complete, Vita3K will restart automatically and then install the new Vita3K." },
+        { "not_complete_update", "Could not complete the update." },
+        { "next", "Next" },
+        { "update_vita3k", "Do you want to update Vita3K" },
+        { "later_version_already_installed", "The later version of Vita3K is already installed." },
+        { "latest_version_already_installed", "The latest version of Vita3K is already installed." },
+        { "new_features", "New Features in Version {}" },
+        { "update", "Update" },
+        { "version", "Version {}" }
+    };
+    std::map<std::string, std::string> welcome = {
+        { "title", "Welcome to Vita3K" },
+        { "line_first", "Vita3K PlayStation Vita Emulator" },
+        { "line_second", "Vita3K is an open-source PlayStation Vita emulator written in C++ for Windows and Linux." },
+        { "line_third", "The emulator is still in its early stages so any feedback and testing is greatly appreciated." },
+        { "line_fourth", "To get started, please install the PS Vita firmware and font packages." },
+        { "download_firmware", "Download Firmware" },
+        { "line_sixth_part_one", "A comprehensive guide on how to set-up Vita3K can be found on the" },
+        { "quickstart", "Quickstart" },
+        { "line_sixth_part_two", "page." },
+        { "line_seventh_part_one", "Consult the Commercial game" },
+        { "compatibility", "compatibility" },
+        { "line_seventh_part_two", "list and the Homebrew compatibility list to see what runs." },
+        { "line_eighth", "Contributions are welcome!" },
+        { "line_tenth", "Additional support can be found in the #help channel of the" },
+        { "line_eleventh", "Vita3K does not condone piracy. You must dump your own games." },
+        { "show_next_time", "Show next time" },
+        { "close", "Close" }
     };
     struct Common {
         std::vector<std::string> wday = {
@@ -263,6 +442,22 @@ struct LangState {
         std::vector<std::string> small_ymonth = {
             "january", "february", "march", "april", "may", "june",
             "july", "august", "september", "october", "november", "december"
+        };
+        std::vector<std::string> mday = {
+            "", "1", "2", "3", "4", "5",
+            "6", "7", "8", "9", "10", "11",
+            "12", "13", "14", "15", "16", "17",
+            "18", "19", "20", "21", "22", "23",
+            "24", "25", "26", "27", "28", "29",
+            "30", "31"
+        };
+        std::vector<std::string> small_mday = {
+            "", "1", "2", "3", "4", "5",
+            "6", "7", "8", "9", "10", "11",
+            "12", "13", "14", "15", "16", "17",
+            "18", "19", "20", "21", "22", "23",
+            "24", "25", "26", "27", "28", "29",
+            "30", "31"
         };
         std::map<std::string, std::string> main = {
             { "hidden_trophy", "Hidden Trophy" },

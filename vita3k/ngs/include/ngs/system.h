@@ -1,5 +1,5 @@
 // Vita3K emulator project
-// Copyright (C) 2021 Vita3K team
+// Copyright (C) 2022 Vita3K team
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -38,23 +38,29 @@ constexpr size_t default_passthrough_parameter_size = 140;
 constexpr size_t default_normal_parameter_size = 100;
 
 enum VoiceState {
-    VOICE_STATE_AVAILABLE = 1 << 0,
-    VOICE_STATE_ACTIVE = 1 << 1,
-    VOICE_STATE_FINALIZING = 1 << 2,
-    VOICE_STATE_UNLOADING = 1 << 3,
-    VOICE_STATE_PENDING = 1 << 4,
-    VOICE_STATE_PAUSED = 1 << 5,
-    VOICE_STATE_KEY_OFF = 1 << 6
+    VOICE_STATE_AVAILABLE,
+    VOICE_STATE_ACTIVE,
+    VOICE_STATE_FINALIZING,
+    VOICE_STATE_UNLOADING,
 };
 
-struct ModuleParameterHeader {
-    SceInt32 module_id;
-    SceInt32 channel;
+struct VoicePreset {
+    SceInt32 name_offset;
+    SceUInt32 name_length;
+    SceInt32 preset_data_offset;
+    SceUInt32 preset_data_size;
+    SceInt32 bypass_flags_offset;
+    SceUInt32 bypass_flags_nb;
 };
 
 struct ParametersDescriptor {
     SceUInt32 id;
     SceUInt32 size;
+};
+
+struct ModuleParameterHeader {
+    SceInt32 module_id;
+    SceInt32 channel;
 };
 
 struct BufferParamsInfo {
@@ -75,14 +81,14 @@ struct CallbackInfo {
     Ptr<void> userdata;
 };
 
-typedef void (*ModuleCallback)(CallbackInfo *info);
-
 struct ModuleData {
     Voice *parent;
     std::uint32_t index;
 
-    Ptr<ModuleCallback> callback;
+    Ptr<void> callback;
     Ptr<void> user_data;
+
+    bool is_bypassed;
 
     std::vector<std::uint8_t> voice_state_data; ///< Voice state.
     std::vector<std::uint8_t> extra_storage; ///< Local data storage for module.
@@ -124,7 +130,7 @@ struct ModuleData {
         const std::uint32_t reason2, Address reason_ptr);
 
     BufferParamsInfo *lock_params(const MemState &mem);
-    bool unlock_params();
+    bool unlock_params(const MemState &mem);
 };
 
 struct Module {
@@ -134,10 +140,11 @@ struct Module {
         : buss_type(buss_type) {}
     virtual ~Module() = default;
 
-    virtual bool process(KernelState &kern, const MemState &mem, const SceUID thread_id, ModuleData &data) = 0;
+    virtual bool process(KernelState &kern, const MemState &mem, const SceUID thread_id, ModuleData &data, std::unique_lock<std::recursive_mutex> &scheduler_lock, std::unique_lock<std::mutex> &voice_lock) = 0;
     virtual std::uint32_t module_id() const { return 0; }
     virtual std::size_t get_buffer_parameter_size() const = 0;
     virtual void on_state_change(ModuleData &v, const VoiceState previous) {}
+    virtual void on_param_change(const MemState &mem, ModuleData &data) {}
 };
 
 static constexpr std::uint32_t MAX_VOICE_OUTPUT = 8;
@@ -210,6 +217,9 @@ struct Voice {
 
     std::vector<ModuleData> datas;
     VoiceState state;
+    bool is_pending;
+    bool is_paused;
+    bool is_keyed_off;
     std::uint32_t frame_count;
 
     using Patches = std::vector<Ptr<Patch>>;
@@ -218,8 +228,11 @@ struct Voice {
 
     VoiceInputManager inputs;
 
-    std::unique_ptr<std::mutex> voice_lock;
+    std::unique_ptr<std::mutex> voice_mutex;
     VoiceProduct products[MAX_VOICE_OUTPUT];
+
+    Ptr<void> finished_callback;
+    Ptr<void> finished_callback_user_data;
 
     void init(Rack *mama);
 
@@ -229,6 +242,13 @@ struct Voice {
     Ptr<Patch> patch(const MemState &mem, const std::int32_t index, std::int32_t subindex, std::int32_t dest_index, Voice *dest);
 
     void transition(const VoiceState new_state);
+    bool parse_params(const MemState &mem, const ModuleParameterHeader *header);
+    // Return the number of errors that happened
+    SceInt32 parse_params_block(const MemState &mem, const ModuleParameterHeader *header, const SceUInt32 size);
+    bool set_preset(const MemState &mem, const VoicePreset *preset);
+
+    void invoke_callback(KernelState &kernel, const MemState &mem, const SceUID thread_id, Ptr<void> callback, Ptr<void> user_data,
+        const std::uint32_t module_id, const std::uint32_t reason = 0, const std::uint32_t reason2 = 0, Address reason_ptr = 0);
 };
 
 struct System;
@@ -265,7 +285,9 @@ bool deliver_data(const MemState &mem, Voice *source, const std::uint8_t output_
     const VoiceProduct &data_to_deliver);
 
 bool init_system(State &ngs, const MemState &mem, SystemInitParameters *parameters, Ptr<void> memspace, const std::uint32_t memspace_size);
+void release_system(State &ngs, const MemState &mem, System *system);
 bool init_rack(State &ngs, const MemState &mem, System *system, BufferParamsInfo *init_info, const RackDescription *description);
+void release_rack(State &ngs, const MemState &mem, System *system, Rack *rack);
 
 Ptr<VoiceDefinition> get_voice_definition(State &ngs, MemState &mem, ngs::BussType type);
 } // namespace ngs

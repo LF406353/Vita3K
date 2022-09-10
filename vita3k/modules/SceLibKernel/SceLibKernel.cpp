@@ -25,11 +25,15 @@
 
 #include <cpu/functions.h>
 #include <dlmalloc.h>
-#include <host/functions.h>
 #include <io/functions.h>
 #include <kernel/load_self.h>
+#include <kernel/state.h>
 #include <kernel/sync_primitives.h>
+#include <packages/functions.h>
 
+#include <io/device.h>
+#include <io/io.h>
+#include <io/types.h>
 #include <kernel/types.h>
 #include <rtc/rtc.h>
 #include <util/lock_and_find.h>
@@ -72,11 +76,11 @@ EXPORT(int, __stack_chk_guard) {
 }
 
 EXPORT(int, _sceKernelCreateLwMutex, Ptr<SceKernelLwMutexWork> workarea, const char *name, unsigned int attr, int init_count, Ptr<SceKernelLwMutexOptParam> opt_param) {
-    const ThreadStatePtr thread = lock_and_find(thread_id, host.kernel.threads, host.kernel.mutex);
+    const ThreadStatePtr thread = lock_and_find(thread_id, emuenv.kernel.threads, emuenv.kernel.mutex);
 
     Ptr<SceKernelCreateLwMutex_opt> options = Ptr<SceKernelCreateLwMutex_opt>(stack_alloc(*thread->cpu, sizeof(SceKernelCreateLwMutex_opt)));
-    options.get(host.mem)->init_count = init_count;
-    options.get(host.mem)->opt_param = opt_param;
+    options.get(emuenv.mem)->init_count = init_count;
+    options.get(emuenv.mem)->opt_param = opt_param;
     int res = CALL_EXPORT(__sceKernelCreateLwMutex, workarea, name, attr, options);
     stack_free(*thread->cpu, sizeof(SceKernelCreateLwMutex_opt));
     return res;
@@ -121,7 +125,7 @@ EXPORT(int, sceClibMemcmpConstTime) {
 }
 
 EXPORT(Ptr<void>, sceClibMemcpy, Ptr<void> dst, const void *src, SceSize len) {
-    memcpy(dst.get(host.mem), src, len);
+    memcpy(dst.get(emuenv.mem), src, len);
     return dst;
 }
 
@@ -130,12 +134,12 @@ EXPORT(int, sceClibMemcpyChk) {
 }
 
 EXPORT(Ptr<void>, sceClibMemcpy_safe, Ptr<void> dst, const void *src, SceSize len) {
-    memcpy(dst.get(host.mem), src, len);
+    memcpy(dst.get(emuenv.mem), src, len);
     return dst;
 }
 
 EXPORT(Ptr<void>, sceClibMemmove, Ptr<void> dst, const void *src, SceSize len) {
-    memmove(dst.get(host.mem), src, len);
+    memmove(dst.get(emuenv.mem), src, len);
     return dst;
 }
 
@@ -144,7 +148,7 @@ EXPORT(int, sceClibMemmoveChk) {
 }
 
 EXPORT(Ptr<void>, sceClibMemset, Ptr<void> dst, int ch, SceSize len) {
-    memset(dst.get(host.mem), ch, len);
+    memset(dst.get(emuenv.mem), ch, len);
     return dst;
 }
 
@@ -153,21 +157,29 @@ EXPORT(int, sceClibMemsetChk) {
 }
 
 EXPORT(Ptr<void>, sceClibMspaceCalloc, Ptr<void> space, uint32_t elements, uint32_t size) {
-    void *address = mspace_calloc(space.get(host.mem), elements, size);
-    return Ptr<void>(address, host.mem);
+    const std::lock_guard<std::mutex> guard(emuenv.kernel.mutex);
+
+    void *address = mspace_calloc(space.get(emuenv.mem), elements, size);
+    return Ptr<void>(address, emuenv.mem);
 }
 
 EXPORT(Ptr<void>, sceClibMspaceCreate, Ptr<void> base, uint32_t capacity) {
-    mspace space = create_mspace_with_base(base.get(host.mem), capacity, 0);
-    return Ptr<void>(space, host.mem);
+    const std::lock_guard<std::mutex> guard(emuenv.kernel.mutex);
+
+    mspace space = create_mspace_with_base(base.get(emuenv.mem), capacity, 0);
+    return Ptr<void>(space, emuenv.mem);
 }
 
 EXPORT(uint32_t, sceClibMspaceDestroy, Ptr<void> space) {
-    return destroy_mspace(space.get(host.mem));
+    const std::lock_guard<std::mutex> guard(emuenv.kernel.mutex);
+
+    return static_cast<uint32_t>(destroy_mspace(space.get(emuenv.mem)));
 }
 
 EXPORT(void, sceClibMspaceFree, Ptr<void> space, Ptr<void> address) {
-    mspace_free(space.get(host.mem), address.get(host.mem));
+    const std::lock_guard<std::mutex> guard(emuenv.kernel.mutex);
+
+    mspace_free(space.get(emuenv.mem), address.get(emuenv.mem));
 }
 
 EXPORT(int, sceClibMspaceIsHeapEmpty) {
@@ -175,8 +187,10 @@ EXPORT(int, sceClibMspaceIsHeapEmpty) {
 }
 
 EXPORT(Ptr<void>, sceClibMspaceMalloc, Ptr<void> space, uint32_t size) {
-    void *address = mspace_malloc(space.get(host.mem), size);
-    return Ptr<void>(address, host.mem);
+    const std::lock_guard<std::mutex> guard(emuenv.kernel.mutex);
+
+    void *address = mspace_malloc(space.get(emuenv.mem), size);
+    return Ptr<void>(address, emuenv.mem);
 }
 
 EXPORT(int, sceClibMspaceMallocStats) {
@@ -192,13 +206,17 @@ EXPORT(int, sceClibMspaceMallocUsableSize) {
 }
 
 EXPORT(Ptr<void>, sceClibMspaceMemalign, Ptr<void> space, uint32_t alignment, uint32_t size) {
-    void *address = mspace_memalign(space.get(host.mem), alignment, size);
-    return Ptr<void>(address, host.mem);
+    const std::lock_guard<std::mutex> guard(emuenv.kernel.mutex);
+
+    void *address = mspace_memalign(space.get(emuenv.mem), alignment, size);
+    return Ptr<void>(address, emuenv.mem);
 }
 
 EXPORT(Ptr<void>, sceClibMspaceRealloc, Ptr<void> space, Ptr<void> address, uint32_t size) {
-    void *new_address = mspace_realloc(space.get(host.mem), address.get(host.mem), size);
-    return Ptr<void>(new_address, host.mem);
+    const std::lock_guard<std::mutex> guard(emuenv.kernel.mutex);
+
+    void *new_address = mspace_realloc(space.get(emuenv.mem), address.get(emuenv.mem), size);
+    return Ptr<void>(new_address, emuenv.mem);
 }
 
 EXPORT(int, sceClibMspaceReallocalign) {
@@ -206,15 +224,15 @@ EXPORT(int, sceClibMspaceReallocalign) {
 }
 
 EXPORT(int, sceClibPrintf, const char *fmt, module::vargs args) {
-    std::vector<char> buffer(KB(1));
+    std::vector<char> buffer(KiB(1));
 
-    const ThreadStatePtr thread = lock_and_find(thread_id, host.kernel.threads, host.kernel.mutex);
+    const ThreadStatePtr thread = lock_and_find(thread_id, emuenv.kernel.threads, emuenv.kernel.mutex);
 
     if (!thread) {
         return SCE_KERNEL_ERROR_UNKNOWN_THREAD_ID;
     }
 
-    const int result = utils::snprintf(buffer.data(), buffer.size(), fmt, *(thread->cpu), host.mem, args);
+    const int result = utils::snprintf(buffer.data(), buffer.size(), fmt, *(thread->cpu), emuenv.mem, args);
 
     if (!result) {
         return SCE_KERNEL_ERROR_INVALID_ARGUMENT;
@@ -226,13 +244,13 @@ EXPORT(int, sceClibPrintf, const char *fmt, module::vargs args) {
 }
 
 EXPORT(int, sceClibSnprintf, char *dst, SceSize dst_max_size, const char *fmt, module::vargs args) {
-    const ThreadStatePtr thread = lock_and_find(thread_id, host.kernel.threads, host.kernel.mutex);
+    const ThreadStatePtr thread = lock_and_find(thread_id, emuenv.kernel.threads, emuenv.kernel.mutex);
 
     if (!thread) {
         return SCE_KERNEL_ERROR_UNKNOWN_THREAD_ID;
     }
 
-    int result = utils::snprintf(dst, dst_max_size, fmt, *(thread->cpu), host.mem, args);
+    int result = utils::snprintf(dst, dst_max_size, fmt, *(thread->cpu), emuenv.mem, args);
 
     if (!result) {
         return SCE_KERNEL_ERROR_INVALID_ARGUMENT;
@@ -251,7 +269,7 @@ EXPORT(int, sceClibStrcatChk) {
 
 EXPORT(Ptr<char>, sceClibStrchr, const char *str, int c) {
     const char *res = strchr(str, c);
-    return Ptr<char>(res, host.mem);
+    return Ptr<char>(res, emuenv.mem);
 }
 
 EXPORT(int, sceClibStrcmp, const char *s1, const char *s2) {
@@ -264,7 +282,7 @@ EXPORT(int, sceClibStrcpyChk) {
 
 EXPORT(Ptr<char>, sceClibStrlcat, char *dst, const char *src, SceSize len) {
     const char *res = strncat(dst, src, len);
-    return Ptr<char>(res, host.mem);
+    return Ptr<char>(res, emuenv.mem);
 }
 
 EXPORT(int, sceClibStrlcatChk) {
@@ -273,7 +291,7 @@ EXPORT(int, sceClibStrlcatChk) {
 
 EXPORT(Ptr<char>, sceClibStrlcpy, char *dst, const char *src, SceSize len) {
     const char *res = strncpy(dst, src, len);
-    return Ptr<char>(res, host.mem);
+    return Ptr<char>(res, emuenv.mem);
 }
 
 EXPORT(int, sceClibStrlcpyChk) {
@@ -290,7 +308,7 @@ EXPORT(int, sceClibStrncasecmp, const char *s1, const char *s2, SceSize len) {
 
 EXPORT(Ptr<char>, sceClibStrncat, char *dst, const char *src, SceSize len) {
     const char *res = strncat(dst, src, len);
-    return Ptr<char>(res, host.mem);
+    return Ptr<char>(res, emuenv.mem);
 }
 
 EXPORT(int, sceClibStrncatChk) {
@@ -303,7 +321,7 @@ EXPORT(int, sceClibStrncmp, const char *s1, const char *s2, SceSize len) {
 
 EXPORT(Ptr<char>, sceClibStrncpy, char *dst, const char *src, SceSize len) {
     const char *res = strncpy(dst, src, len);
-    return Ptr<char>(res, host.mem);
+    return Ptr<char>(res, emuenv.mem);
 }
 
 EXPORT(int, sceClibStrncpyChk) {
@@ -316,12 +334,12 @@ EXPORT(uint32_t, sceClibStrnlen, const char *s1, SceSize maxlen) {
 
 EXPORT(Ptr<char>, sceClibStrrchr, const char *src, int ch) {
     const char *res = strrchr(src, ch);
-    return Ptr<char>(res, host.mem);
+    return Ptr<char>(res, emuenv.mem);
 }
 
 EXPORT(Ptr<char>, sceClibStrstr, const char *s1, const char *s2) {
     const char *res = strstr(s1, s2);
-    return Ptr<char>(res, host.mem);
+    return Ptr<char>(res, emuenv.mem);
 }
 
 EXPORT(int64_t, sceClibStrtoll, const char *str, char **endptr, int base) {
@@ -345,14 +363,14 @@ EXPORT(int, sceClibVprintf) {
 }
 
 EXPORT(int, sceClibVsnprintf, char *dst, SceSize dst_max_size, const char *fmt, Address list) {
-    const ThreadStatePtr thread = lock_and_find(thread_id, host.kernel.threads, host.kernel.mutex);
+    const ThreadStatePtr thread = lock_and_find(thread_id, emuenv.kernel.threads, emuenv.kernel.mutex);
 
     module::vargs args(list);
     if (!thread) {
         return SCE_KERNEL_ERROR_UNKNOWN_THREAD_ID;
     }
 
-    int result = utils::snprintf(dst, dst_max_size, fmt, *(thread->cpu), host.mem, args);
+    int result = utils::snprintf(dst, dst_max_size, fmt, *(thread->cpu), emuenv.mem, args);
 
     if (!result) {
         return SCE_KERNEL_ERROR_INVALID_ARGUMENT;
@@ -385,8 +403,41 @@ EXPORT(int, sceIoCompleteMultiple) {
     return UNIMPLEMENTED();
 }
 
-EXPORT(int, sceIoDevctl) {
-    return UNIMPLEMENTED();
+EXPORT(int, sceIoDevctl, const char *dev, SceInt cmd, const void *indata, SceSize inlen, void *outdata, SceSize outlen) {
+    if (!dev || !outdata)
+        return RET_ERROR(SCE_ERROR_ERRNO_EINVAL);
+
+    // TODO: Turn the commands into an enum of commands
+    switch (cmd) {
+    case 12289: { // Get device capacity info?
+        assert(outlen == sizeof(SceIoDevInfo));
+
+        uint64_t max_size, free_size = 0;
+
+        auto device = device::get_device(dev);
+        if (device == VitaIoDevice::_INVALID) {
+            LOG_ERROR("Cannot find device for path: {}", dev);
+            return RET_ERROR(SCE_ERROR_ERRNO_ENOENT);
+        }
+
+        fs::path dev_path = device._to_string();
+        fs::path path = emuenv.pref_path / dev_path;
+        fs::space_info space = fs::space(path);
+
+        ((SceIoDevInfo *)outdata)->max_size = space.capacity;
+        ((SceIoDevInfo *)outdata)->free_size = space.available;
+        STUBBED("cluster size = 4096");
+        ((SceIoDevInfo *)outdata)->cluster_size = 4096;
+        break;
+    }
+    default: {
+        LOG_WARN("Unhandled case for sceIoDevctl cmd={}", cmd);
+        assert(false);
+        return 0;
+    }
+    }
+
+    return 0;
 }
 
 EXPORT(int, sceIoDevctlAsync) {
@@ -410,7 +461,7 @@ EXPORT(int, sceIoGetstatAsync) {
 }
 
 EXPORT(int, sceIoGetstatByFd, const SceUID fd, SceIoStat *stat) {
-    return stat_file_by_fd(host.io, fd, stat, host.pref_path, export_name);
+    return stat_file_by_fd(emuenv.io, fd, stat, emuenv.pref_path, export_name);
 }
 
 EXPORT(int, sceIoIoctl) {
@@ -422,11 +473,11 @@ EXPORT(int, sceIoIoctlAsync) {
 }
 
 EXPORT(SceOff, sceIoLseek, const SceUID fd, const SceOff offset, const SceIoSeekMode whence) {
-    const ThreadStatePtr thread = lock_and_find(thread_id, host.kernel.threads, host.kernel.mutex);
+    const ThreadStatePtr thread = lock_and_find(thread_id, emuenv.kernel.threads, emuenv.kernel.mutex);
 
     Ptr<_sceIoLseekOpt> options = Ptr<_sceIoLseekOpt>(stack_alloc(*thread->cpu, sizeof(_sceIoLseekOpt)));
-    options.get(host.mem)->offset = offset;
-    options.get(host.mem)->whence = whence;
+    options.get(emuenv.mem)->offset = offset;
+    options.get(emuenv.mem)->whence = whence;
     SceOff res = CALL_EXPORT(_sceIoLseek, fd, options);
     stack_free(*thread->cpu, sizeof(_sceIoLseekOpt));
     return res;
@@ -449,21 +500,21 @@ EXPORT(SceUID, sceIoOpen, const char *file, const int flags, const SceMode mode)
         return RET_ERROR(SCE_ERROR_ERRNO_EINVAL);
     }
     LOG_INFO("Opening file: {}", file);
-    return open_file(host.io, file, flags, host.pref_path, export_name);
+    return open_file(emuenv.io, file, flags, emuenv.pref_path, export_name);
 }
 
 EXPORT(int, sceIoOpenAsync) {
     return UNIMPLEMENTED();
 }
 
-EXPORT(SceSSize, sceIoPread, const SceUID fd, void *data, const SceSize size, const SceOff offset) {
-    auto pos = tell_file(host.io, fd, export_name);
+EXPORT(SceSSize, sceIoPread, SceUID fd, void *buf, SceSize nbyte, SceOff offset) {
+    auto pos = tell_file(emuenv.io, fd, export_name);
     if (pos < 0) {
-        return pos;
+        return static_cast<SceSSize>(pos);
     }
-    seek_file(fd, offset, SCE_SEEK_SET, host.io, export_name);
-    const auto res = read_file(data, host.io, fd, size, export_name);
-    seek_file(fd, pos, SCE_SEEK_SET, host.io, export_name);
+    seek_file(fd, offset, SCE_SEEK_SET, emuenv.io, export_name);
+    const auto res = read_file(buf, emuenv.io, fd, nbyte, export_name);
+    seek_file(fd, pos, SCE_SEEK_SET, emuenv.io, export_name);
     return res;
 }
 
@@ -471,14 +522,14 @@ EXPORT(int, sceIoPreadAsync) {
     return UNIMPLEMENTED();
 }
 
-EXPORT(SceSSize, sceIoPwrite, const SceUID fd, const void *data, const SceSize size, const SceOff offset) {
-    auto pos = tell_file(host.io, fd, export_name);
+EXPORT(SceSSize, sceIoPwrite, SceUID fd, const void *buf, SceSize nbyte, SceOff offset) {
+    auto pos = tell_file(emuenv.io, fd, export_name);
     if (pos < 0) {
-        return pos;
+        return static_cast<SceSSize>(pos);
     }
-    seek_file(fd, offset, SCE_SEEK_SET, host.io, export_name);
-    const auto res = write_file(fd, data, size, host.io, export_name);
-    seek_file(fd, pos, SCE_SEEK_SET, host.io, export_name);
+    seek_file(fd, offset, SCE_SEEK_SET, emuenv.io, export_name);
+    const auto res = write_file(fd, buf, nbyte, emuenv.io, export_name);
+    seek_file(fd, pos, SCE_SEEK_SET, emuenv.io, export_name);
     return res;
 }
 
@@ -494,7 +545,7 @@ EXPORT(int, sceIoRemove, const char *path) {
     if (path == nullptr) {
         return RET_ERROR(SCE_ERROR_ERRNO_EINVAL);
     }
-    return remove_file(host.io, path, host.pref_path, export_name);
+    return remove_file(emuenv.io, path, emuenv.pref_path, export_name);
 }
 
 EXPORT(int, sceIoRemoveAsync) {
@@ -513,7 +564,7 @@ EXPORT(int, sceIoRmdir, const char *path) {
     if (path == nullptr) {
         return RET_ERROR(SCE_ERROR_ERRNO_EINVAL);
     }
-    return remove_dir(host.io, path, host.pref_path, export_name);
+    return remove_dir(emuenv.io, path, emuenv.pref_path, export_name);
 }
 
 EXPORT(int, sceIoRmdirAsync) {
@@ -840,8 +891,8 @@ EXPORT(int, sceKernelCancelEvent) {
     return UNIMPLEMENTED();
 }
 
-EXPORT(int, sceKernelCancelEventFlag) {
-    return UNIMPLEMENTED();
+EXPORT(SceInt32, sceKernelCancelEventFlag, SceUID event_id, SceUInt pattern, SceUInt32 *num_wait_thread) {
+    return CALL_EXPORT(_sceKernelCancelEventFlag, event_id, pattern, num_wait_thread);
 }
 
 EXPORT(int, sceKernelCancelEventWithSetPattern) {
@@ -889,11 +940,11 @@ EXPORT(int, sceKernelCreateEventFlag, const char *name, unsigned int attr, unsig
 }
 
 EXPORT(int, sceKernelCreateLwCond, Ptr<SceKernelLwCondWork> workarea, const char *name, SceUInt attr, Ptr<SceKernelLwMutexWork> workarea_mutex, Ptr<SceKernelLwCondOptParam> opt_param) {
-    const ThreadStatePtr thread = lock_and_find(thread_id, host.kernel.threads, host.kernel.mutex);
+    const ThreadStatePtr thread = lock_and_find(thread_id, emuenv.kernel.threads, emuenv.kernel.mutex);
 
     Ptr<SceKernelCreateLwCond_opt> options = Ptr<SceKernelCreateLwCond_opt>(stack_alloc(*thread->cpu, sizeof(SceKernelCreateLwCond_opt)));
-    options.get(host.mem)->workarea_mutex = workarea_mutex;
-    options.get(host.mem)->opt_param = opt_param;
+    options.get(emuenv.mem)->workarea_mutex = workarea_mutex;
+    options.get(emuenv.mem)->opt_param = opt_param;
     int res = CALL_EXPORT(_sceKernelCreateLwCond, workarea, name, attr, options);
     stack_free(*thread->cpu, sizeof(SceKernelCreateLwCond_opt));
     return res;
@@ -904,7 +955,7 @@ EXPORT(int, sceKernelCreateLwMutex, Ptr<SceKernelLwMutexWork> workarea, const ch
 }
 
 EXPORT(int, sceKernelCreateMsgPipe, const char *name, uint32_t type, uint32_t attr, SceSize bufSize, const SceKernelCreateMsgPipeOpt *opt) {
-    return msgpipe_create(host.kernel, export_name, name, thread_id, attr, bufSize);
+    return msgpipe_create(emuenv.kernel, export_name, name, thread_id, attr, bufSize);
 }
 
 EXPORT(int, sceKernelCreateMsgPipeWithLR) {
@@ -914,62 +965,65 @@ EXPORT(int, sceKernelCreateMsgPipeWithLR) {
 EXPORT(int, sceKernelCreateMutex, const char *name, SceUInt attr, int init_count, SceKernelMutexOptParam *opt_param) {
     SceUID uid;
 
-    if (auto error = mutex_create(&uid, host.kernel, host.mem, export_name, name, thread_id, attr, init_count, Ptr<SceKernelLwMutexWork>(0), SyncWeight::Heavy)) {
+    if (auto error = mutex_create(&uid, emuenv.kernel, emuenv.mem, export_name, name, thread_id, attr, init_count, Ptr<SceKernelLwMutexWork>(0), SyncWeight::Heavy)) {
         return error;
     }
     return uid;
 }
 
-EXPORT(int, sceKernelCreateRWLock) {
-    return UNIMPLEMENTED();
+EXPORT(SceUID, sceKernelCreateRWLock, const char *name, SceUInt32 attr, SceKernelMutexOptParam *opt_param) {
+    return CALL_EXPORT(_sceKernelCreateRWLock, name, attr, opt_param);
 }
 
 EXPORT(SceUID, sceKernelCreateSema, const char *name, SceUInt attr, int initVal, int maxVal, Ptr<SceKernelSemaOptParam> option) {
-    const ThreadStatePtr thread = lock_and_find(thread_id, host.kernel.threads, host.kernel.mutex);
+    const ThreadStatePtr thread = lock_and_find(thread_id, emuenv.kernel.threads, emuenv.kernel.mutex);
 
     Ptr<SceKernelCreateSema_opt> options = Ptr<SceKernelCreateSema_opt>(stack_alloc(*thread->cpu, sizeof(SceKernelCreateSema_opt)));
-    options.get(host.mem)->maxVal = maxVal;
-    options.get(host.mem)->option = option;
+    options.get(emuenv.mem)->maxVal = maxVal;
+    options.get(emuenv.mem)->option = option;
     int res = CALL_EXPORT(_sceKernelCreateSema, name, attr, initVal, options);
     stack_free(*thread->cpu, sizeof(SceKernelCreateSema_opt));
     return res;
 }
 
 EXPORT(int, sceKernelCreateSema_16XX, const char *name, SceUInt attr, int initVal, int maxVal, Ptr<SceKernelSemaOptParam> option) {
-    const ThreadStatePtr thread = lock_and_find(thread_id, host.kernel.threads, host.kernel.mutex);
+    const ThreadStatePtr thread = lock_and_find(thread_id, emuenv.kernel.threads, emuenv.kernel.mutex);
 
     Ptr<SceKernelCreateSema_opt> options = Ptr<SceKernelCreateSema_opt>(stack_alloc(*thread->cpu, sizeof(SceKernelCreateSema_opt)));
-    options.get(host.mem)->maxVal = maxVal;
-    options.get(host.mem)->option = option;
+    options.get(emuenv.mem)->maxVal = maxVal;
+    options.get(emuenv.mem)->option = option;
     int res = CALL_EXPORT(_sceKernelCreateSema, name, attr, initVal, options);
     stack_free(*thread->cpu, sizeof(SceKernelCreateSema_opt));
     return res;
 }
 
-EXPORT(SceUID, sceKernelCreateSimpleEvent, const char *pName, SceUInt32 attr, SceUInt32 initPattern, const SceKernelSimpleEventOptParam *pOptParam) {
-    return eventflag_create(host.kernel, export_name, thread_id, pName, attr, initPattern);
+EXPORT(SceUID, sceKernelCreateSimpleEvent, const char *name, SceUInt32 attr, SceUInt32 init_pattern, const SceKernelSimpleEventOptParam *pOptParam) {
+    return CALL_EXPORT(_sceKernelCreateSimpleEvent, name, attr, init_pattern, pOptParam);
 }
 
 EXPORT(SceUID, sceKernelCreateThread, const char *name, SceKernelThreadEntry entry, int init_priority, int stack_size, SceUInt attr, int cpu_affinity_mask, Ptr<SceKernelThreadOptParam> option) {
-    const ThreadStatePtr thread = lock_and_find(thread_id, host.kernel.threads, host.kernel.mutex);
+    const ThreadStatePtr thread = lock_and_find(thread_id, emuenv.kernel.threads, emuenv.kernel.mutex);
 
     Ptr<SceKernelCreateThread_opt> options = Ptr<SceKernelCreateThread_opt>(stack_alloc(*thread->cpu, sizeof(SceKernelCreateThread_opt)));
-    options.get(host.mem)->stack_size = stack_size;
-    options.get(host.mem)->attr = attr;
-    options.get(host.mem)->cpu_affinity_mask = cpu_affinity_mask;
-    options.get(host.mem)->option = option;
-    SceUID res = CALL_EXPORT(sceKernelCreateThreadForUser, name, entry, init_priority, options.get(host.mem));
+    options.get(emuenv.mem)->stack_size = stack_size;
+    options.get(emuenv.mem)->attr = attr;
+    options.get(emuenv.mem)->cpu_affinity_mask = cpu_affinity_mask;
+    options.get(emuenv.mem)->option = option;
+    SceUID res = CALL_EXPORT(sceKernelCreateThreadForUser, name, entry, init_priority, options.get(emuenv.mem));
     stack_free(*thread->cpu, sizeof(SceKernelCreateThread_opt));
     return res;
 }
 
-EXPORT(SceUID, sceKernelCreateTimer, const char *name, uint32_t flags, const void *next) {
-    assert(!next);
+EXPORT(SceUID, sceKernelCreateTimer, const char *name, uint32_t flags, const uint32_t *opt_params) {
+    // opt_params is not used by the firmware but if it is not null,
+    // the firmware checks if its first field (its size) is at most 4.
+    if (opt_params && opt_params[0] > 4)
+        return RET_ERROR(SCE_KERNEL_ERROR_ILLEGAL_SIZE);
 
-    SceUID handle = host.kernel.get_next_uid();
+    SceUID handle = emuenv.kernel.get_next_uid();
 
-    host.kernel.timers[handle] = std::make_shared<TimerState>();
-    TimerPtr &timer_info = host.kernel.timers[handle];
+    emuenv.kernel.timers[handle] = std::make_shared<TimerState>();
+    TimerPtr &timer_info = emuenv.kernel.timers[handle];
 
     timer_info->name = name;
 
@@ -995,9 +1049,9 @@ EXPORT(SceUID, sceKernelCreateTimer, const char *name, uint32_t flags, const voi
 }
 
 EXPORT(int, sceKernelDeleteLwCond, Ptr<SceKernelLwCondWork> workarea) {
-    SceUID lightweight_condition_id = workarea.get(host.mem)->uid;
+    SceUID lightweight_condition_id = workarea.get(emuenv.mem)->uid;
 
-    return condvar_delete(host.kernel, export_name, thread_id, lightweight_condition_id, SyncWeight::Light);
+    return condvar_delete(emuenv.kernel, export_name, thread_id, lightweight_condition_id, SyncWeight::Light);
 }
 
 EXPORT(int, sceKernelDeleteLwMutex, Ptr<SceKernelLwMutexWork> workarea) {
@@ -1006,13 +1060,13 @@ EXPORT(int, sceKernelDeleteLwMutex, Ptr<SceKernelLwMutexWork> workarea) {
 
 EXPORT(int, sceKernelExitProcess, int res) {
     // TODO Handle exit code?
-    host.kernel.exit_delete_all_threads();
+    emuenv.kernel.exit_delete_all_threads();
 
     return SCE_KERNEL_OK;
 }
 
 EXPORT(SceInt32, sceKernelGetCallbackInfo, SceUID callbackId, Ptr<SceKernelCallbackInfo> pInfo) {
-    return CALL_EXPORT(_sceKernelGetCallbackInfo, callbackId, pInfo.get(host.mem));
+    return CALL_EXPORT(_sceKernelGetCallbackInfo, callbackId, pInfo.get(emuenv.mem));
 }
 
 EXPORT(SceInt32, sceKernelGetCondInfo, SceUID condId, Ptr<SceKernelCondInfo> pInfo) {
@@ -1046,17 +1100,17 @@ EXPORT(int, sceKernelGetLwCondInfoById) {
 EXPORT(int, sceKernelGetLwMutexInfoById, SceUID lightweight_mutex_id, Ptr<SceKernelLwMutexInfo> info) {
     SceSize size = 0;
     if (info) {
-        size = info.get(host.mem)->size;
+        size = info.get(emuenv.mem)->size;
     }
     return CALL_EXPORT(_sceKernelGetLwMutexInfoById, lightweight_mutex_id, info, size);
 }
 
 EXPORT(int, sceKernelGetLwMutexInfo, Ptr<SceKernelLwMutexWork> workarea, Ptr<SceKernelLwMutexInfo> info) {
-    return CALL_EXPORT(sceKernelGetLwMutexInfoById, workarea.get(host.mem)->uid, info);
+    return CALL_EXPORT(sceKernelGetLwMutexInfoById, workarea.get(emuenv.mem)->uid, info);
 }
 
 EXPORT(int, sceKernelGetModuleInfoByAddr, Ptr<void> addr, SceKernelModuleInfo *info) {
-    const auto mod = host.kernel.find_module_by_addr(addr.address());
+    const auto mod = emuenv.kernel.find_module_by_addr(addr.address());
     if (mod) {
         *info = *mod;
         return SCE_KERNEL_OK;
@@ -1083,17 +1137,17 @@ EXPORT(int, sceKernelGetPMUSERENR) {
 
 EXPORT(int, sceKernelGetProcessTime, SceUInt64 *time) {
     if (time) {
-        *time = rtc_get_ticks(host.kernel.base_tick.tick) - host.kernel.start_tick;
+        *time = rtc_get_ticks(emuenv.kernel.base_tick.tick) - emuenv.kernel.start_tick;
     }
     return 0;
 }
 
 EXPORT(SceUInt32, sceKernelGetProcessTimeLow) {
-    return static_cast<SceUInt32>(rtc_get_ticks(host.kernel.base_tick.tick) - host.kernel.start_tick);
+    return static_cast<SceUInt32>(rtc_get_ticks(emuenv.kernel.base_tick.tick) - emuenv.kernel.start_tick);
 }
 
 EXPORT(SceUInt64, sceKernelGetProcessTimeWide) {
-    return rtc_get_ticks(host.kernel.base_tick.tick) - host.kernel.start_tick;
+    return rtc_get_ticks(emuenv.kernel.base_tick.tick) - emuenv.kernel.start_tick;
 }
 
 EXPORT(int, sceKernelGetRWLockInfo) {
@@ -1113,20 +1167,33 @@ EXPORT(int, sceKernelGetSystemTime) {
 }
 
 EXPORT(Ptr<Ptr<void>>, sceKernelGetTLSAddr, int key) {
-    return host.kernel.get_thread_tls_addr(host.mem, thread_id, key);
+    return emuenv.kernel.get_thread_tls_addr(emuenv.mem, thread_id, key);
 }
 
 EXPORT(int, sceKernelGetThreadContextForVM, SceUID threadId, Ptr<SceKernelThreadCpuRegisterInfo> pCpuRegisterInfo, Ptr<SceKernelThreadVfpRegisterInfo> pVfpRegisterInfo) {
     return CALL_EXPORT(_sceKernelGetThreadContextForVM, threadId, pCpuRegisterInfo, pVfpRegisterInfo);
 }
 
-EXPORT(int, sceKernelGetThreadCpuAffinityMask2) {
-    STUBBED("STUB");
-    return 0x01 << 16;
+EXPORT(SceInt32, sceKernelGetThreadCpuAffinityMask2, SceUID thid) {
+    const SceInt32 affinity = CALL_EXPORT(_sceKernelGetThreadCpuAffinityMask, thid);
+
+    // I guess the difference between this function and sceKernelGetThreadCpuAffinityMask
+    // is that if the result is SCE_KERNEL_THREAD_CPU_AFFINITY_MASK_DEFAULT (=0)
+    // it gets converted into its real affinity (SCE_KERNEL_CPU_MASK_USER_ALL)
+    // either way without this dragon quest builder does not boot
+    if (affinity == SCE_KERNEL_THREAD_CPU_AFFINITY_MASK_DEFAULT)
+        return SCE_KERNEL_CPU_MASK_USER_ALL;
+
+    return affinity;
 }
 
-EXPORT(int, sceKernelGetThreadCurrentPriority) {
-    return UNIMPLEMENTED();
+EXPORT(SceInt32, sceKernelGetThreadCurrentPriority) {
+    const ThreadStatePtr thread = emuenv.kernel.get_thread(thread_id);
+
+    if (!thread)
+        return RET_ERROR(SCE_KERNEL_ERROR_UNKNOWN_THREAD_ID);
+
+    return thread->priority;
 }
 
 EXPORT(int, sceKernelGetThreadEventInfo) {
@@ -1134,7 +1201,7 @@ EXPORT(int, sceKernelGetThreadEventInfo) {
 }
 
 EXPORT(int, sceKernelGetThreadExitStatus, SceUID thid, SceInt32 *pExitStatus) {
-    const ThreadStatePtr thread = lock_and_find(thid ? thid : thread_id, host.kernel.threads, host.kernel.mutex);
+    const ThreadStatePtr thread = lock_and_find(thid ? thid : thread_id, emuenv.kernel.threads, emuenv.kernel.mutex);
     if (!thread) {
         return SCE_KERNEL_ERROR_UNKNOWN_THREAD_ID;
     }
@@ -1160,7 +1227,7 @@ EXPORT(int, sceKernelGetThreadRunStatus) {
 }
 
 EXPORT(int, sceKernelGetTimerBase, SceUID timer_handle, SceKernelSysClock *time) {
-    const TimerPtr timer_info = lock_and_find(timer_handle, host.kernel.timers, host.kernel.mutex);
+    const TimerPtr timer_info = lock_and_find(timer_handle, emuenv.kernel.timers, emuenv.kernel.mutex);
 
     if (!timer_info)
         return SCE_KERNEL_ERROR_UNKNOWN_TIMER_ID;
@@ -1179,7 +1246,7 @@ EXPORT(int, sceKernelGetTimerInfo) {
 }
 
 EXPORT(int, sceKernelGetTimerTime, SceUID timer_handle, SceKernelSysClock *time) {
-    const TimerPtr timer_info = lock_and_find(timer_handle, host.kernel.timers, host.kernel.mutex);
+    const TimerPtr timer_info = lock_and_find(timer_handle, emuenv.kernel.timers, emuenv.kernel.mutex);
 
     if (!timer_info)
         return SCE_KERNEL_ERROR_UNKNOWN_TIMER_ID;
@@ -1202,7 +1269,7 @@ EXPORT(int, sceKernelLockLwMutex, Ptr<SceKernelLwMutexWork> workarea, int lock_c
 }
 
 EXPORT(int, sceKernelLockLwMutexCB, Ptr<SceKernelLwMutexWork> workarea, int lock_count, unsigned int *ptimeout) {
-    STUBBED("no CB");
+    process_callbacks(emuenv.kernel, thread_id);
     return CALL_EXPORT(_sceKernelLockLwMutex, workarea, lock_count, ptimeout);
 }
 
@@ -1210,25 +1277,24 @@ EXPORT(int, sceKernelLockMutex, SceUID mutexid, int lock_count, unsigned int *ti
     return CALL_EXPORT(_sceKernelLockMutex, mutexid, lock_count, timeout);
 }
 
-EXPORT(int, sceKernelLockMutexCB, SceUID mutexid, int lock_count, unsigned int *timeout) {
-    STUBBED("no CB");
-    return CALL_EXPORT(_sceKernelLockMutex, mutexid, lock_count, timeout);
+EXPORT(SceInt32, sceKernelLockMutexCB, SceUID mutexId, SceInt32 lockCount, SceUInt32 *pTimeout) {
+    return CALL_EXPORT(_sceKernelLockMutexCB, mutexId, lockCount, pTimeout);
 }
 
-EXPORT(int, sceKernelLockReadRWLock) {
-    return UNIMPLEMENTED();
+EXPORT(SceInt32, sceKernelLockReadRWLock, SceUID lock_id, SceUInt32 *timeout) {
+    return CALL_EXPORT(_sceKernelLockReadRWLock, lock_id, timeout);
 }
 
-EXPORT(int, sceKernelLockReadRWLockCB) {
-    return UNIMPLEMENTED();
+EXPORT(SceInt32, sceKernelLockReadRWLockCB, SceUID lock_id, SceUInt32 *timeout) {
+    return CALL_EXPORT(_sceKernelLockReadRWLockCB, lock_id, timeout);
 }
 
-EXPORT(int, sceKernelLockWriteRWLock) {
-    return UNIMPLEMENTED();
+EXPORT(SceInt32, sceKernelLockWriteRWLock, SceUID lock_id, SceUInt32 *timeout) {
+    return CALL_EXPORT(_sceKernelLockWriteRWLock, lock_id, timeout);
 }
 
-EXPORT(int, sceKernelLockWriteRWLockCB) {
-    return UNIMPLEMENTED();
+EXPORT(SceInt32, sceKernelLockWriteRWLockCB, SceUID lock_id, SceUInt32 *timeout) {
+    return CALL_EXPORT(_sceKernelLockWriteRWLockCB, lock_id, timeout);
 }
 
 EXPORT(int, sceKernelOpenModule) {
@@ -1239,8 +1305,8 @@ EXPORT(int, sceKernelPMonThreadGetCounter) {
     return UNIMPLEMENTED();
 }
 
-EXPORT(int, sceKernelPollEvent) {
-    return UNIMPLEMENTED();
+EXPORT(SceInt32, sceKernelPollEvent, SceUID event_id, SceUInt32 bit_pattern, SceUInt32 *result_pattern, SceUInt64 *user_data) {
+    return CALL_EXPORT(_sceKernelPollEvent, event_id, bit_pattern, result_pattern, user_data);
 }
 
 EXPORT(int, sceKernelPollEventFlag, SceUID event_id, unsigned int flags, unsigned int wait, unsigned int *outBits) {
@@ -1255,19 +1321,20 @@ EXPORT(int, sceKernelPulseEventWithNotifyCallback) {
     return UNIMPLEMENTED();
 }
 
-EXPORT(int, sceKernelReceiveMsgPipe, SceUID msgpipe_id, char *recv_buf, SceSize msg_size, SceUInt32 wait_mode, SceSize *result, SceUInt32 *timeout) {
-    const auto ret = msgpipe_recv(host.kernel, export_name, thread_id, msgpipe_id, wait_mode, recv_buf, msg_size, timeout);
+EXPORT(SceInt32, sceKernelReceiveMsgPipe, SceUID msgPipeId, void *pRecvBuf, SceSize recvSize, SceUInt32 waitMode, SceSize *pResult, SceUInt32 *pTimeout) {
+    const auto ret = msgpipe_recv(emuenv.kernel, export_name, thread_id, msgPipeId, waitMode, pRecvBuf, recvSize, pTimeout);
     if (ret < 0) {
         return ret;
     }
-    if (result) {
-        *result = ret;
+    if (pResult) {
+        *pResult = ret;
     }
     return SCE_KERNEL_OK;
 }
 
-EXPORT(int, sceKernelReceiveMsgPipeCB) {
-    return UNIMPLEMENTED();
+EXPORT(SceInt32, sceKernelReceiveMsgPipeCB, SceUID msgPipeId, void *pRecvBuf, SceSize recvSize, SceUInt32 waitMode, SceSize *pResult, SceUInt32 *pTimeout) {
+    process_callbacks(emuenv.kernel, thread_id);
+    return CALL_EXPORT(sceKernelReceiveMsgPipe, msgPipeId, pRecvBuf, recvSize, waitMode, pResult, pTimeout);
 }
 
 EXPORT(int, sceKernelReceiveMsgPipeVector) {
@@ -1282,19 +1349,20 @@ EXPORT(int, sceKernelRegisterThreadEventHandler) {
     return UNIMPLEMENTED();
 }
 
-EXPORT(int, sceKernelSendMsgPipe, SceUID msgpipe_id, char *send_buf, SceSize msg_size, SceUInt32 wait_mode, SceSize *result, SceUInt32 *timeout) {
-    const auto ret = msgpipe_send(host.kernel, export_name, thread_id, msgpipe_id, wait_mode, send_buf, msg_size, timeout);
+EXPORT(SceInt32, sceKernelSendMsgPipe, SceUID msgPipeId, const void *pSendBuf, SceSize sendSize, SceUInt32 waitMode, SceSize *pResult, SceUInt32 *pTimeout) {
+    const auto ret = msgpipe_send(emuenv.kernel, export_name, thread_id, msgPipeId, waitMode, pSendBuf, sendSize, pTimeout);
     if (ret < 0) {
         return ret;
     }
-    if (result) {
-        *result = ret;
+    if (pResult) {
+        *pResult = ret;
     }
     return SCE_KERNEL_OK;
 }
 
-EXPORT(int, sceKernelSendMsgPipeCB) {
-    return UNIMPLEMENTED();
+EXPORT(SceInt32, sceKernelSendMsgPipeCB, SceUID msgPipeId, const void *pSendBuf, SceSize sendSize, SceUInt32 waitMode, SceSize *pResult, SceUInt32 *pTimeout) {
+    process_callbacks(emuenv.kernel, thread_id);
+    return CALL_EXPORT(sceKernelSendMsgPipe, msgPipeId, pSendBuf, sendSize, waitMode, pResult, pTimeout);
 }
 
 EXPORT(int, sceKernelSendMsgPipeVector) {
@@ -1316,7 +1384,7 @@ EXPORT(int, sceKernelSetThreadContextForVM, SceUID threadId, Ptr<SceKernelThread
 EXPORT(int, sceKernelSetTimerEvent, SceUID timer_handle, int32_t type, SceKernelSysClock *clock, int32_t repeats) {
     STUBBED("Type not implemented.");
 
-    const TimerPtr timer_info = lock_and_find(timer_handle, host.kernel.timers, host.kernel.mutex);
+    const TimerPtr timer_info = lock_and_find(timer_handle, emuenv.kernel.timers, emuenv.kernel.mutex);
 
     if (!timer_info)
         return SCE_KERNEL_ERROR_UNKNOWN_TIMER_ID;
@@ -1333,20 +1401,20 @@ EXPORT(int, sceKernelSetTimerTime) {
 }
 
 EXPORT(int, sceKernelSignalLwCond, Ptr<SceKernelLwCondWork> workarea) {
-    SceUID condid = workarea.get(host.mem)->uid;
-    return condvar_signal(host.kernel, export_name, thread_id, condid,
+    SceUID condid = workarea.get(emuenv.mem)->uid;
+    return condvar_signal(emuenv.kernel, export_name, thread_id, condid,
         Condvar::SignalTarget(Condvar::SignalTarget::Type::Any), SyncWeight::Light);
 }
 
 EXPORT(int, sceKernelSignalLwCondAll, Ptr<SceKernelLwCondWork> workarea) {
-    SceUID condid = workarea.get(host.mem)->uid;
-    return condvar_signal(host.kernel, export_name, thread_id, condid,
+    SceUID condid = workarea.get(emuenv.mem)->uid;
+    return condvar_signal(emuenv.kernel, export_name, thread_id, condid,
         Condvar::SignalTarget(Condvar::SignalTarget::Type::All), SyncWeight::Light);
 }
 
 EXPORT(int, sceKernelSignalLwCondTo, Ptr<SceKernelLwCondWork> workarea, SceUID thread_target) {
-    SceUID condid = workarea.get(host.mem)->uid;
-    return condvar_signal(host.kernel, export_name, thread_id, condid,
+    SceUID condid = workarea.get(emuenv.mem)->uid;
+    return condvar_signal(emuenv.kernel, export_name, thread_id, condid,
         Condvar::SignalTarget(Condvar::SignalTarget::Type::Specific, thread_target), SyncWeight::Light);
 }
 
@@ -1371,12 +1439,12 @@ EXPORT(int, sceKernelStopUnloadModule) {
 }
 
 EXPORT(int, sceKernelTryLockLwMutex, Ptr<SceKernelLwMutexWork> workarea, int lock_count) {
-    const auto lwmutexid = workarea.get(host.mem)->uid;
-    return mutex_try_lock(host.kernel, host.mem, export_name, thread_id, lwmutexid, lock_count, SyncWeight::Light);
+    const auto lwmutexid = workarea.get(emuenv.mem)->uid;
+    return mutex_try_lock(emuenv.kernel, emuenv.mem, export_name, thread_id, lwmutexid, lock_count, SyncWeight::Light);
 }
 
 EXPORT(int, sceKernelTryReceiveMsgPipe, SceUID msgpipe_id, char *recv_buf, SceSize msg_size, SceUInt32 wait_mode, SceSize *result) {
-    const auto ret = msgpipe_recv(host.kernel, export_name, thread_id, msgpipe_id, wait_mode | SCE_KERNEL_MSG_PIPE_MODE_DONT_WAIT, recv_buf, msg_size, 0);
+    const auto ret = msgpipe_recv(emuenv.kernel, export_name, thread_id, msgpipe_id, wait_mode | SCE_KERNEL_MSG_PIPE_MODE_DONT_WAIT, recv_buf, msg_size, 0);
     if (ret == 0) {
         return SCE_KERNEL_ERROR_MPP_EMPTY;
     }
@@ -1403,39 +1471,37 @@ EXPORT(int, sceKernelUnloadModule) {
 }
 
 EXPORT(int, sceKernelUnlockLwMutex, Ptr<SceKernelLwMutexWork> workarea, int unlock_count) {
-    const auto lwmutexid = workarea.get(host.mem)->uid;
-    return mutex_unlock(host.kernel, export_name, thread_id, lwmutexid, unlock_count, SyncWeight::Light);
+    const auto lwmutexid = workarea.get(emuenv.mem)->uid;
+    return mutex_unlock(emuenv.kernel, export_name, thread_id, lwmutexid, unlock_count, SyncWeight::Light);
 }
 
 EXPORT(int, sceKernelUnlockLwMutex2, Ptr<SceKernelLwMutexWork> workarea, int unlock_count) {
-    const auto lwmutexid = workarea.get(host.mem)->uid;
-    return mutex_unlock(host.kernel, export_name, thread_id, lwmutexid, unlock_count, SyncWeight::Light);
+    const auto lwmutexid = workarea.get(emuenv.mem)->uid;
+    return mutex_unlock(emuenv.kernel, export_name, thread_id, lwmutexid, unlock_count, SyncWeight::Light);
 }
 
-EXPORT(int, sceKernelWaitCond, SceUID cond_id, SceUInt32 *timeout) {
-    return condvar_wait(host.kernel, host.mem, export_name, thread_id, cond_id, timeout, SyncWeight::Heavy);
+EXPORT(SceInt32, sceKernelWaitCond, SceUID condId, SceUInt32 *pTimeout) {
+    return CALL_EXPORT(_sceKernelWaitCond, condId, pTimeout);
 }
 
-EXPORT(int, sceKernelWaitCondCB, SceUID cond_id, SceUInt32 *timeout) {
-    STUBBED("no CB");
-    return condvar_wait(host.kernel, host.mem, export_name, thread_id, cond_id, timeout, SyncWeight::Heavy);
+EXPORT(SceInt32, sceKernelWaitCondCB, SceUID condId, SceUInt32 *pTimeout) {
+    return CALL_EXPORT(_sceKernelWaitCondCB, condId, pTimeout);
 }
 
-EXPORT(int, sceKernelWaitEvent) {
-    return UNIMPLEMENTED();
+EXPORT(SceInt32, sceKernelWaitEvent, SceUID event_id, SceUInt32 bit_pattern, SceUInt32 *result_pattern, SceUInt64 *user_data, SceUInt32 *timeout) {
+    return CALL_EXPORT(_sceKernelWaitEvent, event_id, bit_pattern, result_pattern, user_data, timeout);
 }
 
-EXPORT(int, sceKernelWaitEventCB) {
-    return UNIMPLEMENTED();
+EXPORT(SceInt32, sceKernelWaitEventCB, SceUID event_id, SceUInt32 bit_pattern, SceUInt32 *result_pattern, SceUInt64 *user_data, SceUInt32 *timeout) {
+    return CALL_EXPORT(_sceKernelWaitEventCB, event_id, bit_pattern, result_pattern, user_data, timeout);
 }
 
 EXPORT(SceInt32, sceKernelWaitEventFlag, SceUID evfId, SceUInt32 bitPattern, SceUInt32 waitMode, SceUInt32 *pResultPat, SceUInt32 *pTimeout) {
-    return eventflag_wait(host.kernel, export_name, thread_id, evfId, bitPattern, waitMode, pResultPat, pTimeout);
+    return eventflag_wait(emuenv.kernel, export_name, thread_id, evfId, bitPattern, waitMode, pResultPat, pTimeout);
 }
 
 EXPORT(SceInt32, sceKernelWaitEventFlagCB, SceUID evfId, SceUInt32 bitPattern, SceUInt32 waitMode, SceUInt32 *pResultPat, SceUInt32 *pTimeout) {
-    STUBBED("no CB");
-    return eventflag_wait(host.kernel, export_name, thread_id, evfId, bitPattern, waitMode, pResultPat, pTimeout);
+    return CALL_EXPORT(_sceKernelWaitEventFlagCB, evfId, bitPattern, waitMode, pResultPat, pTimeout);
 }
 
 EXPORT(int, sceKernelWaitException) {
@@ -1447,14 +1513,12 @@ EXPORT(int, sceKernelWaitExceptionCB) {
 }
 
 EXPORT(int, sceKernelWaitLwCond, Ptr<SceKernelLwCondWork> workarea, SceUInt32 *timeout) {
-    const auto cond_id = workarea.get(host.mem)->uid;
-    return condvar_wait(host.kernel, host.mem, export_name, thread_id, cond_id, timeout, SyncWeight::Light);
+    const auto cond_id = workarea.get(emuenv.mem)->uid;
+    return condvar_wait(emuenv.kernel, emuenv.mem, export_name, thread_id, cond_id, timeout, SyncWeight::Light);
 }
 
-EXPORT(int, sceKernelWaitLwCondCB, Ptr<SceKernelLwCondWork> workarea, SceUInt32 *timeout) {
-    STUBBED("no CB");
-    const auto cond_id = workarea.get(host.mem)->uid;
-    return condvar_wait(host.kernel, host.mem, export_name, thread_id, cond_id, timeout, SyncWeight::Light);
+EXPORT(SceInt32, sceKernelWaitLwCondCB, Ptr<SceKernelLwCondWork> pWork, SceUInt32 *pTimeout) {
+    return CALL_EXPORT(_sceKernelWaitLwCondCB, pWork, pTimeout);
 }
 
 EXPORT(int, sceKernelWaitMultipleEvents) {
@@ -1465,21 +1529,20 @@ EXPORT(int, sceKernelWaitMultipleEventsCB) {
     return UNIMPLEMENTED();
 }
 
-EXPORT(int, sceKernelWaitSema, SceUID semaid, int signal, SceUInt *timeout) {
-    return CALL_EXPORT(_sceKernelWaitSema, semaid, signal, timeout);
+EXPORT(SceInt32, sceKernelWaitSema, SceUID semaId, SceInt32 needCount, SceUInt32 *pTimeout) {
+    return CALL_EXPORT(_sceKernelWaitSema, semaId, needCount, pTimeout);
 }
 
-EXPORT(int, sceKernelWaitSemaCB, SceUID semaid, int signal, SceUInt *timeout) {
-    STUBBED("no CB");
-    return CALL_EXPORT(_sceKernelWaitSema, semaid, signal, timeout);
+EXPORT(SceInt32, sceKernelWaitSemaCB, SceUID semaId, SceInt32 needCount, SceUInt32 *pTimeout) {
+    return CALL_EXPORT(_sceKernelWaitSemaCB, semaId, needCount, pTimeout);
 }
 
 EXPORT(int, sceKernelWaitSignal, uint32_t unknown, uint32_t delay, uint32_t timeout) {
     return CALL_EXPORT(_sceKernelWaitSignal, unknown, delay, timeout);
 }
 
-EXPORT(int, sceKernelWaitSignalCB) {
-    return UNIMPLEMENTED();
+EXPORT(int, sceKernelWaitSignalCB, uint32_t unknown, uint32_t delay, uint32_t timeout) {
+    return CALL_EXPORT(_sceKernelWaitSignalCB, unknown, delay, timeout);
 }
 
 EXPORT(int, sceKernelWaitThreadEnd, SceUID thid, int *stat, SceUInt *timeout) {
@@ -1633,6 +1696,7 @@ EXPORT(int, sceSblGcAuthMgrSclkSetData2) {
 BRIDGE_IMPL(__sce_aeabi_idiv0)
 BRIDGE_IMPL(__sce_aeabi_ldiv0)
 BRIDGE_IMPL(__stack_chk_fail)
+BRIDGE_IMPL(__stack_chk_guard)
 BRIDGE_IMPL(_sceKernelCreateLwMutex)
 BRIDGE_IMPL(sceClibAbort)
 BRIDGE_IMPL(sceClibDprintf)

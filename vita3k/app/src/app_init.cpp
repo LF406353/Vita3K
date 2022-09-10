@@ -19,10 +19,15 @@
 
 #include <audio/functions.h>
 #include <config/functions.h>
+#include <config/state.h>
 #include <config/version.h>
+#include <display/state.h>
+#include <emuenv/state.h>
 #include <gui/imgui_impl_sdl.h>
-#include <host/state.h>
 #include <io/functions.h>
+#include <kernel/state.h>
+#include <ngs/state.h>
+#include <renderer/state.h>
 
 #include <nids/functions.h>
 #include <renderer/functions.h>
@@ -38,16 +43,14 @@
 
 #include <gdbstub/functions.h>
 
-#ifdef USE_VULKAN
 #include <renderer/vulkan/functions.h>
 #include <util/string_utils.h>
-#endif
 
 #include <SDL_video.h>
 #include <SDL_vulkan.h>
 
 namespace app {
-void update_viewport(HostState &state) {
+void update_viewport(EmuEnvState &state) {
     int w = 0;
     int h = 0;
 
@@ -55,11 +58,11 @@ void update_viewport(HostState &state) {
     case renderer::Backend::OpenGL:
         SDL_GL_GetDrawableSize(state.window.get(), &w, &h);
         break;
-#ifdef USE_VULKAN
+
     case renderer::Backend::Vulkan:
         SDL_Vulkan_GetDrawableSize(state.window.get(), &w, &h);
         break;
-#endif
+
     default:
         LOG_ERROR("Unimplemented backend render: {}.", static_cast<int>(state.renderer->current_backend));
         break;
@@ -92,7 +95,7 @@ void update_viewport(HostState &state) {
     }
 }
 
-bool init(HostState &state, Config &cfg, const Root &root_paths) {
+bool init(EmuEnvState &state, Config &cfg, const Root &root_paths) {
     const ResumeAudioThread resume_thread = [&state](SceUID thread_id) {
         const auto thread = lock_and_find(thread_id, state.kernel.threads, state.kernel.mutex);
         const std::lock_guard<std::mutex> lock(thread->mutex);
@@ -115,11 +118,9 @@ bool init(HostState &state, Config &cfg, const Root &root_paths) {
         state.pref_path = string_utils::utf_to_wide(state.cfg.pref_path);
     }
 
-#ifdef USE_VULKAN
     if (string_utils::toupper(state.cfg.backend_renderer) == "VULKAN")
         state.backend_renderer = renderer::Backend::Vulkan;
     else
-#endif
         state.backend_renderer = renderer::Backend::OpenGL;
 
     int window_type = 0;
@@ -127,11 +128,11 @@ bool init(HostState &state, Config &cfg, const Root &root_paths) {
     case renderer::Backend::OpenGL:
         window_type = SDL_WINDOW_OPENGL;
         break;
-#ifdef USE_VULKAN
+
     case renderer::Backend::Vulkan:
         window_type = SDL_WINDOW_VULKAN;
         break;
-#endif
+
     default:
         LOG_ERROR("Unimplemented backend render: {}.", state.cfg.backend_renderer);
         break;
@@ -181,19 +182,19 @@ bool init(HostState &state, Config &cfg, const Root &root_paths) {
 #endif
 
     if (!cfg.console) {
-        if (renderer::init(state.window.get(), state.renderer, state.backend_renderer)) {
+        if (renderer::init(state.window.get(), state.renderer, state.backend_renderer, state.cfg, state.base_path.data())) {
             update_viewport(state);
             return true;
         } else {
             switch (state.backend_renderer) {
             case renderer::Backend::OpenGL:
-                error_dialog("Could not create OpenGL context!\nDoes your GPU at least support OpenGL 4.1?", nullptr);
+                error_dialog("Could not create OpenGL context!\nDoes your GPU at least support OpenGL 4.4?", nullptr);
                 break;
-#ifdef USE_VULKAN
+
             case renderer::Backend::Vulkan:
                 error_dialog("Could not create Vulkan context!");
                 break;
-#endif
+
             default:
                 error_dialog(fmt::format("Unknown backend render: {}.", state.cfg.backend_renderer));
                 break;
@@ -205,26 +206,19 @@ bool init(HostState &state, Config &cfg, const Root &root_paths) {
     return true;
 }
 
-void destroy(HostState &host, ImGui_State *imgui) {
+void destroy(EmuEnvState &emuenv, ImGui_State *imgui) {
     ImGui_ImplSdl_Shutdown(imgui);
-#ifdef USE_VULKAN
-    // I'm explicitly destroying VulkanState in app::destroy instead of a destructor because I want to ensure an order.
-    // Objects in Vulkan should be destroyed in reverse order than they were created.
-    if (host.renderer->current_backend == renderer::Backend::Vulkan) {
-        renderer::vulkan::close(host.renderer);
-    }
-#endif
 
 #ifdef USE_DISCORD
     discordrpc::shutdown();
 #endif
 
-    if (host.cfg.gdbstub)
-        server_close(host);
+    if (emuenv.cfg.gdbstub)
+        server_close(emuenv);
 
     // There may be changes that made in the GUI, so we should save, again
-    if (host.cfg.overwrite_config)
-        config::serialize_config(host.cfg, host.cfg.config_path);
+    if (emuenv.cfg.overwrite_config)
+        config::serialize_config(emuenv.cfg, emuenv.cfg.config_path);
 }
 
 } // namespace app

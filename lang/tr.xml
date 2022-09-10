@@ -2,31 +2,42 @@
 
 <lang>
 	<main_menubar>
-		<file name="Sıra">
-			<open_pref_path>Tercih klasörünü aç</open_pref_path>
-			<install_firmware>Yazılım yükle</install_firmware>
-			<install_pkg>.pkg yükle</install_pkg>
-			<install_zip>.zip, .vpk yükle</install_zip>
-			<install_license>Lisans yükle</install_license>
+		<file name="Dosya">
+			<open_pref_path>Tercih Klasörünü aç</open_pref_path>
+			<install_firmware>Yazılım Yükle</install_firmware>
+			<install_pkg>.pkg Yükle</install_pkg>
+			<install_zip>.zip, .vpk Yükle</install_zip>
+			<install_license>Lisans Yükle</install_license>
 		</file>
-		<emulation name="öykünme">
-			<last_apps_used>Son kullanma</last_apps_used>
+		<emulation name="Öykünme">
+			<last_apps_used>Son Kullanma</last_apps_used>
 		</emulation>
 		<configuration name="Yapılandırma">
 			<settings>Ayarlar</settings>
-			<user_management>Kullanıcı yönetimi</user_management>
+			<user_management>Kullanıcı Yönetimi</user_management>
 		</configuration>
 		<controls name="Kontroller">
-			<keyboard_controls>Klavye kontrolleri</keyboard_controls>
+			<keyboard_controls>Klavye Kontrolleri</keyboard_controls>
 		</controls>
 		<help name="Yardım">
-			<about>Hakkında</about>
 			<welcome>Hoşgeldin</welcome>
 		</help>
 	</main_menubar>
+
+	<about name="Hakkında">
+		<vita3k>Vita3K: a PS Vita/PS TV Emulator. The world's first functional PS Vita/PS TV emulator.</vita3k>
+		<about_vita3k>Vita3K is an experimental open-source PlayStation Vita/PlayStation TV emulator written in C++ for Windows and Linux operating systems.</about_vita3k>
+		<note>Note: The emulator is still in a very early stage of development.</note>
+		<github_website>If you're interested in contributing, check out our GitHub:</github_website>
+		<vita3k_website>Visit our website for more info:</vita3k_website>
+		<vita3k_staff>Vita3K Staff</vita3k_staff>
+		<developers>Developers</developers>
+		<contributors>Contributors</contributors>
+	</about>
 	
 	<app_context>
 		<update_history>Güncelleme Geçmişi</update_history>
+		<history_version>Sürüm {}</history_version>
 		<information>Bilgi</information>
 		<app_delete>Bu uygulama ve kayıtlı veriler dahil ilgili tüm veriler silinecek.</app_delete>
 		<save_delete>Bu kayıtlı verileri silmek istiyor musunuz?</save_delete>
@@ -90,6 +101,74 @@
 			<month>Kasım</month>
 			<month>Aralık</month>
 		</small_ymonth>
+		<mday>
+			<days></days>
+			<days>1</days>
+			<days>2</days>
+			<days>3</days>
+			<days>4</days>
+			<days>5</days>
+			<days>6</days>
+			<days>7</days>
+			<days>8</days>
+			<days>9</days>
+			<days>10</days>
+			<days>11</days>
+			<days>12</days>
+			<days>13</days>
+			<days>14</days>
+			<days>15</days>
+			<days>16</days>
+			<days>17</days>
+			<days>18</days>
+			<days>19</days>
+			<days>20</days>
+			<days>21</days>
+			<days>22</days>
+			<days>23</days>
+			<days>24</days>
+			<days>25</days>
+			<days>26</days>
+			<days>27</days>
+			<days>28</days>
+			<days>29</days>
+			<days>30</days>
+			<days>31</days>
+		</mday>
+		<small_mday>
+			<days></days>
+			<days>1</days>
+			<days>2</days>
+			<days>3</days>
+			<days>4</days>
+			<days>5</days>
+			<days>6</days>
+			<days>7</days>
+			<days>8</days>
+			<days>9</days>
+			<days>10</days>
+			<days>11</days>
+			<days>12</days>
+			<days>13</days>
+			<days>14</days>
+			<days>15</days>
+			<days>16</days>
+			<days>17</days>
+			<days>18</days>
+			<days>19</days>
+			<days>20</days>
+			<days>21</days>
+			<days>22</days>
+			<days>23</days>
+			<days>24</days>
+			<days>25</days>
+			<days>26</days>
+			<days>27</days>
+			<days>28</days>
+			<days>29</days>
+			<days>30</days>
+			<days>31</days>
+		</small_mday>
 		<hidden_trophy>Gizli Kupa</hidden_trophy>
 		<one_hour_ago>1 Saat Önce</one_hour_ago>
 		<one_minute_ago>1 Dakika Önce</one_minute_ago>
@@ -100,6 +179,28 @@
 		<hours_ago>{} Saat Önce</hours_ago>
 		<minutes_ago>{} Dakika Önce</minutes_ago>
 	</common>
+
+	<content_manager name="İçerik Yöneticisi">
+		<application name="Uygulamalar">
+			<delete>Seçilen uygulamalar ve kayıtlı veriler dahil ilgili tüm veriler silinecek.</delete>
+			<no_item>İçerik öğesi yok.</no_item>
+		</application>
+		<saved_data name="Kayıtlı Veriler">
+			<delete>Seçilen kayıtlı veri öğeleri silinecek.</delete>
+			<no_saved_data>Kayıtlı Veri yok.</no_saved_data>
+		</saved_data>
+		<theme>Tema</theme>
+		<free_space>Boş Alan</free_space>
+		<clear_all>Tümünü Temizle</clear_all>
+	</content_manager>
+
+	<controllers name="Kontroller">
+		<connected>Controllers connected</connected>
+		<name>Ad</name>
+		<num>Num</num>
+		<not_connected>No compatible controllers connected.
+Connect a controller that is compatible with SDL2.</not_connected>
+	</controllers>
 
 	<dialog>
 		<trophy>
@@ -140,6 +241,7 @@ Sistemi veya uygulamayı kapatmayın.</warning_saving>
 
 	<game_data>
 		<app_close>Şu uygulama kapatılacak.</app_close>
+		<data_delete>Silinecek Veriler:</data_delete>
 	</game_data>
 
 	<indicator>
@@ -170,6 +272,7 @@ Vita3K sisteminiz artık hazır!</completed_setup>
 		<theme_background name="Tema & Arkaplan">
 			<default>Varsayılan</default>
 			<theme name="Tema">
+				<find_in_altervista>Altervista'da Bul</find_in_altervista>
 				<information name="Bilgi">
 					<name>Ad</name>
 					<provider>Sağlayıcı</provider>
@@ -182,7 +285,10 @@ Vita3K sisteminiz artık hazır!</completed_setup>
 			<start_screen name="Başlangıç Ekranı">
 				<image>Görüntü</image>
 			</start_screen>
-			<home_screen_backgrounds>Giriş Ekranı Arka Planları</home_screen_backgrounds>
+			<home_screen_backgrounds name="Giriş Ekranı Arka Planları">
+				<delete_background>Delete Background</delete_background>
+				<add_background>Add Background</add_background>
+			</home_screen_backgrounds>
 		</theme_background>
 		<date_time name="Tarih & Saat">
 			<date_format name ="Tarih Formatı">
@@ -199,7 +305,7 @@ Vita3K sisteminiz artık hazır!</completed_setup>
 			<system_language>Sistem Dili</system_language>
 			<input_language name="Giriş Dilleri">
 				<keyboards name="Klavyeler">
-					<ime_langagues>
+					<ime_languages>
 						<lang id="1">Danca</lang>
 						<lang id="2">Almanca</lang>
 						<lang id="262144">İngilizce (Birleşik Krallık)</lang>
@@ -216,7 +322,7 @@ Vita3K sisteminiz artık hazır!</completed_setup>
 						<lang id="2048">Fince</lang>
 						<lang id="4096">İsveççe</lang>
 						<lang id="524288">Türkçe</lang>
-					</ime_langagues>
+					</ime_languages>
 				</keyboards>
 			</input_language>
 		</language>
@@ -238,12 +344,23 @@ Kupa özelliğini destekleyen bir uygulamayı kullanarak kupa kazanabilirsiniz.<
 	</trophy_collection>
 
 	<user_management>
-		<create_user>Kullanıcı oluştur</create_user>
-		<edit_user>Kullanıcıyı düzenle</edit_user>
-		<delete_user>Kullanıcıyı sil</delete_user>
-		<change_avatar>Kullanıcı değiştir</change_avatar>
+		<select_user>Kullanıcıyı Seç</select_user>
+		<create_user>Kullanıcı Oluştur</create_user>
+		<user_created>Şu kullanıcı oluşturuldu:</user_created>
+		<edit_user>Kullanıcı Düzenle</edit_user>
+		<user_name_used>Bu isim zaten kullanılıyor.</user_name_used>
+		<delete_user>Kullanıcıyı Sil</delete_user>
+		<user_delete>Silmek istediğiniz kullanıcıyı seçin.</user_delete>
+		<user_delete_msg>Şu kullanıcı silinecek:</user_delete_msg>
+		<user_delete_message>Kullanıcıyı silerseniz, bu kullanıcının kayıtlı verileri, kupalar silinir.</user_delete_message>
+		<user_delete_warn>Kullanıcı silinecek.
+Devam etmek istediğinizden emin misiniz?</user_delete_warn>
+		<user_deleted>Kullanıcı Silindi.</user_deleted>
+		<change_avatar>Avatar Değiştir</change_avatar>
+		<reset_avatar>Avatar Sıfırla</reset_avatar>
 		<name>Ad</name>
 		<user>Kullanıcı</user>
 		<confirm>Onayla</confirm>
+		<automatic_user_login>Otomatik Kullanıcı Girişi</automatic_user_login>
 	</user_management>
 </lang>

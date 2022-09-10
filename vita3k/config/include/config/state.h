@@ -1,5 +1,5 @@
 // Vita3K emulator project
-// Copyright (C) 2021 Vita3K team
+// Copyright (C) 2022 Vita3K team
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -21,8 +21,9 @@
 #include <config/yaml.h>
 
 #include <util/fs.h>
-#include <util/optional.h>
 #include <util/vector_utils.h>
+
+#include <optional>
 
 // Enum based on members in Config file
 // Used for easier getting of options and their names for config files
@@ -83,12 +84,12 @@ private:
 
 public:
     // Optional config settings
-    optional<fs::path> content_path;
-    optional<std::string> run_app_path;
-    optional<std::string> recompile_shader_path;
-    optional<std::string> delete_title_id;
-    optional<std::string> pkg_path;
-    optional<std::string> pkg_zrif;
+    std::optional<fs::path> content_path;
+    std::optional<std::string> run_app_path;
+    std::optional<std::string> recompile_shader_path;
+    std::optional<std::string> delete_title_id;
+    std::optional<std::string> pkg_path;
+    std::optional<std::string> pkg_zrif;
 
     // Setting not present in the YAML file
     fs::path config_path = {};
@@ -100,19 +101,44 @@ public:
     bool console = false;
     bool load_app_list = false;
 
-    // Current config
+    /**
+     * @brief Available HLE modules for advanced profiling using Tracy
+     *
+     * Advanced profiling using Tracy allows for function calls to be logged with their arguments
+     */
+    const std::vector<std::string> tracy_available_advanced_profiling_modules = {
+        "SceAudio",
+        "SceTouch"
+    };
+
+    /**
+     * @brief Config struct for per-app configurable settings
+     *
+     * All the settings that appear in this struct can be adjusted using app-specific custom config files.
+     */
     struct CurrentConfig {
         std::string cpu_backend;
         bool cpu_opt = true;
-        bool lle_driver_user = false;
         int modules_mode = ModulesMode::AUTOMATIC;
         std::vector<std::string> lle_modules = {};
         bool pstv_mode = false;
-        bool disable_ngs = false;
-        bool video_playing = true;
-        bool disable_at9_decoder = false;
+        bool ngs_enable = true;
+        int resolution_multiplier = 1;
+        bool disable_surface_sync = false;
+        bool enable_fxaa = false;
+        bool v_sync = true;
+        int anisotropic_filtering = 1;
     };
 
+    /**
+     * @brief Config struct for per-app configurable settings
+     *
+     * All the settings that appear in this struct can be adjusted using app-specific custom config files.
+     *
+     * If no app-specific config file is loaded, the values of these settings will be exactly
+     * the same values as the ones set on an app-agnostic level (global emulator settings). If an app-specific config
+     * file is loaded, the values of these settings will match those of the loaded app-specific config file.
+     */
     CurrentConfig current_config;
 
     Config() {

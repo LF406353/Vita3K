@@ -10,6 +10,7 @@ set(SOURCE_LIST
 	SceAppUtil/SceAppUtilExt.cpp SceAppUtil/SceAppUtilExt.h
 	SceAtrac/SceAtrac.cpp SceAtrac/SceAtrac.h
 	SceAudio/SceAudio.cpp SceAudio/SceAudio.h
+	SceAudio/SceAudio_tracy.cpp
 	SceAudiodec/SceAudiodecUser.cpp SceAudiodec/SceAudiodecUser.h
 	SceAudioenc/SceAudioencUser.cpp SceAudioenc/SceAudioencUser.h
 	SceAudioIn/SceAudioIn.cpp SceAudioIn/SceAudioIn.h
@@ -189,6 +190,7 @@ set(SOURCE_LIST
 	SceTeleportClient/SceTeleportClient.cpp SceTeleportClient/SceTeleportClient.h
 	SceTeleportServer/SceTeleportServer.cpp SceTeleportServer/SceTeleportServer.h
 	SceTouch/SceTouch.cpp SceTouch/SceTouch.h
+	SceTouch/SceTouch_tracy.cpp
 	SceTriggerUtil/SceTriggerUtil.cpp SceTriggerUtil/SceTriggerUtil.h
 	SceUdcd/SceUdcd.cpp SceUdcd/SceUdcd.h
 	SceUlobjMgr/SceUlobjMgr.cpp SceUlobjMgr/SceUlobjMgr.h
@@ -209,6 +211,6 @@ set(SOURCE_LIST
 
 add_library(modules STATIC ${SOURCE_LIST})
 target_include_directories(modules PUBLIC include)
-target_link_libraries(modules PRIVATE xxHash::xxhash)
+target_link_libraries(modules PRIVATE audio codec ctrl dialog display gui gxm kernel mem net ngs np packages renderer rtc sdl2 touch xxHash::xxhash)
 target_link_libraries(modules PUBLIC module)
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SOURCE_LIST})

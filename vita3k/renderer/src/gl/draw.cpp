@@ -58,21 +58,8 @@ static GLenum translate_primitive(SceGxmPrimitiveType primType) {
     return GL_TRIANGLES;
 }
 
-struct GXMRenderVertUniformBlock {
-    float viewport_flip[4];
-    float viewport_flag;
-    float screen_width;
-    float screen_height;
-};
-
-struct GXMRenderFragUniformBlock {
-    float back_disabled = 0;
-    float front_disabled = 0;
-    float writing_mask = 0;
-};
-
 void draw(GLState &renderer, GLContext &context, const FeatureState &features, SceGxmPrimitiveType type, SceGxmIndexFormat format, void *indices, size_t count, uint32_t instance_count,
-    MemState &mem, const char *base_path, const char *title_id, const Config &config) {
+    MemState &mem, const char *base_path, const char *title_id, const char *self_name, const Config &config) {
     R_PROFILE(__func__);
 
     GLuint program_id = context.last_draw_program;
@@ -85,7 +72,7 @@ void draw(GLState &renderer, GLContext &context, const FeatureState &features, S
     // If it's different, we need to switch. Else just stick to it.
     if (context.record.vertex_program.get(mem)->renderer_data->hash != context.last_draw_vertex_program_hash || context.record.fragment_program.get(mem)->renderer_data->hash != context.last_draw_fragment_program_hash) {
         // Need to recompile!
-        SharedGLObject program = gl::compile_program(renderer, context.record, features, mem, config.shader_cache, config.spirv_shader, gxm_fragment_program.is_maskupdate, base_path, title_id);
+        SharedGLObject program = gl::compile_program(renderer, context, context.record, features, mem, config.shader_cache, config.spirv_shader, gxm_fragment_program.is_maskupdate, base_path, title_id, self_name);
 
         LOG_ERROR_IF(!program, "Fail to get program!");
 
@@ -112,23 +99,40 @@ void draw(GLState &renderer, GLContext &context, const FeatureState &features, S
 
     glUseProgram(program_id);
 
+    const bool use_raw_image = renderer.features.preserve_f16_nan_as_u16 && color::is_write_surface_stored_rawly(gxm::get_base_format(context.record.color_surface.colorFormat));
+
+    const SceGxmColorBaseFormat base_format = gxm::get_base_format(context.record.color_surface.colorFormat);
+    const GLenum surface_format = color::translate_internal_format(base_format);
+
     if (fragment_program_gxp.is_native_color() && features.is_programmable_blending_need_to_bind_color_attachment()) {
-        glBindImageTexture(shader::COLOR_ATTACHMENT_TEXTURE_SLOT_IMAGE, context.current_color_attachment, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA8);
+        if (use_raw_image) {
+            glBindImageTexture(shader::COLOR_ATTACHMENT_RAW_TEXTURE_SLOT_IMAGE, context.current_color_attachment, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA16UI);
+            glBindImageTexture(shader::COLOR_ATTACHMENT_TEXTURE_SLOT_IMAGE, 0, 0, GL_FALSE, 0, GL_READ_WRITE, surface_format);
+        } else {
+            glBindImageTexture(shader::COLOR_ATTACHMENT_RAW_TEXTURE_SLOT_IMAGE, 0, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA16UI);
+            glBindImageTexture(shader::COLOR_ATTACHMENT_TEXTURE_SLOT_IMAGE, context.current_color_attachment, 0, GL_FALSE, 0, GL_READ_WRITE, surface_format);
+        }
     }
     glBindImageTexture(shader::MASK_TEXTURE_SLOT_IMAGE, context.render_target->masktexture[0], 0, GL_FALSE, 0, GL_READ_ONLY, GL_RGBA8);
 
-    GXMRenderVertUniformBlock vert_ublock;
-    std::memcpy(vert_ublock.viewport_flip, context.viewport_flip, sizeof(context.viewport_flip));
+    shader::RenderVertUniformBlock &vert_ublock = context.current_vert_render_info;
+    vert_ublock.viewport_flip = context.record.viewport_flip;
     vert_ublock.viewport_flag = (context.record.viewport_flat) ? 0.0f : 1.0f;
+    vert_ublock.z_offset = context.record.z_offset;
+    vert_ublock.z_scale = context.record.z_scale;
     vert_ublock.screen_width = static_cast<float>(context.record.color_surface.width);
     vert_ublock.screen_height = static_cast<float>(context.record.color_surface.height);
 
-    glBindBuffer(GL_UNIFORM_BUFFER, context.uniform_buffer[0]);
-    glBufferData(GL_UNIFORM_BUFFER, sizeof(GXMRenderVertUniformBlock), nullptr, GL_DYNAMIC_DRAW);
-    glBufferData(GL_UNIFORM_BUFFER, sizeof(GXMRenderVertUniformBlock), &vert_ublock, GL_DYNAMIC_DRAW);
-    glBindBufferBase(GL_UNIFORM_BUFFER, 2, context.uniform_buffer[0]);
+    if (memcmp(&context.previous_vert_info, &vert_ublock, sizeof(shader::RenderVertUniformBlock)) != 0) {
+        std::pair<std::uint8_t *, std::size_t> allocated_buffer = context.vertex_info_uniform_buffer.allocate(sizeof(shader::RenderVertUniformBlock));
+        std::memcpy(allocated_buffer.first, &vert_ublock, sizeof(shader::RenderVertUniformBlock));
 
-    GXMRenderFragUniformBlock frag_ublock;
+        context.previous_vert_info = vert_ublock;
+
+        glBindBufferRange(GL_UNIFORM_BUFFER, 2, context.vertex_info_uniform_buffer.handle(), allocated_buffer.second, sizeof(shader::RenderVertUniformBlock));
+    }
+
+    shader::RenderFragUniformBlock &frag_ublock = context.current_frag_render_info;
     const bool both_side_fragment_program_disabled = (context.record.front_side_fragment_program_mode == SCE_GXM_FRAGMENT_PROGRAM_DISABLED)
         && ((context.record.back_side_fragment_program_mode == SCE_GXM_FRAGMENT_PROGRAM_DISABLED) || (context.record.two_sided == SCE_GXM_TWO_SIDED_DISABLED));
     if (both_side_fragment_program_disabled) {
@@ -151,21 +155,36 @@ void draw(GLState &renderer, GLContext &context, const FeatureState &features, S
         glBindFramebuffer(GL_FRAMEBUFFER, context.render_target->maskbuffer[0]);
     }
     frag_ublock.writing_mask = context.record.writing_mask;
+    frag_ublock.use_raw_image = static_cast<float>(use_raw_image);
+    frag_ublock.res_multiplier = renderer.res_multiplier;
 
-    glBindBuffer(GL_UNIFORM_BUFFER, context.uniform_buffer[1]);
-    glBufferData(GL_UNIFORM_BUFFER, sizeof(GXMRenderFragUniformBlock), nullptr, GL_DYNAMIC_DRAW);
-    glBufferData(GL_UNIFORM_BUFFER, sizeof(GXMRenderFragUniformBlock), &frag_ublock, GL_DYNAMIC_DRAW);
-    glBindBufferBase(GL_UNIFORM_BUFFER, 3, context.uniform_buffer[1]);
+    if (memcmp(&context.previous_frag_info, &frag_ublock, sizeof(shader::RenderFragUniformBlock)) != 0) {
+        std::pair<std::uint8_t *, std::size_t> allocated_buffer = context.fragment_info_uniform_buffer.allocate(sizeof(shader::RenderFragUniformBlock));
+        std::memcpy(allocated_buffer.first, &frag_ublock, sizeof(shader::RenderFragUniformBlock));
+
+        context.previous_frag_info = frag_ublock;
+
+        glBindBufferRange(GL_UNIFORM_BUFFER, 3, context.fragment_info_uniform_buffer.handle(), allocated_buffer.second, sizeof(shader::RenderFragUniformBlock));
+    }
 
     context.vertex_set_requests.clear();
     context.fragment_set_requests.clear();
 
-    // Upload index data.
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, context.element_buffer[0]);
-    const GLsizeiptr index_size = (format == SCE_GXM_INDEX_FORMAT_U16) ? 2 : 4;
+    // Upload vertex stream
+    sync_vertex_streams_and_attributes(context, context.record, mem);
 
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, index_size * count, nullptr, GL_DYNAMIC_DRAW);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, index_size * count, indices, GL_DYNAMIC_DRAW);
+    // Upload index data.
+    const GLsizeiptr index_size = (format == SCE_GXM_INDEX_FORMAT_U16) ? 2 : 4;
+    const std::size_t index_buffer_size = index_size * count;
+
+    std::pair<std::uint8_t *, std::size_t> index_gpu_ptr = context.index_stream_ring_buffer.allocate(index_buffer_size);
+    if (!index_gpu_ptr.first) {
+        LOG_ERROR("Failed to allocate index stream ring buffer data from GPU!");
+        return;
+    }
+
+    std::memcpy(index_gpu_ptr.first, indices, index_buffer_size);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, context.index_stream_ring_buffer.handle());
 
     std::uint8_t *indices_u8 = reinterpret_cast<std::uint8_t *>(indices);
     delete[] indices_u8;
@@ -181,7 +200,7 @@ void draw(GLState &renderer, GLContext &context, const FeatureState &features, S
         if (features.support_texture_barrier) {
             glTextureBarrier();
         } else {
-            std::uint64_t ping_pong = context.surface_cache.retrieve_ping_pong_color_surface_texture_handle(context.record.color_surface.data);
+            std::uint64_t ping_pong = renderer.surface_cache.retrieve_ping_pong_color_surface_texture_handle(context.record.color_surface.data);
             if (ping_pong != 0) {
                 for (std::size_t i = 0; i < context.self_sampling_indices.size(); i++) {
                     glActiveTexture(GL_TEXTURE0 + context.self_sampling_indices[i]);
@@ -196,9 +215,9 @@ void draw(GLState &renderer, GLContext &context, const FeatureState &features, S
     const GLenum gl_type = format == SCE_GXM_INDEX_FORMAT_U16 ? GL_UNSIGNED_SHORT : GL_UNSIGNED_INT;
 
     if (instance_count == 1) {
-        glDrawElements(mode, static_cast<GLsizei>(count), gl_type, nullptr);
+        glDrawElements(mode, static_cast<GLsizei>(count), gl_type, reinterpret_cast<const void *>(index_gpu_ptr.second));
     } else {
-        glDrawElementsInstanced(mode, static_cast<GLsizei>(count), gl_type, nullptr, instance_count);
+        glDrawElementsInstanced(mode, static_cast<GLsizei>(count), gl_type, reinterpret_cast<const void *>(index_gpu_ptr.second), instance_count);
     }
 
     // Restore context for normal draws
@@ -214,5 +233,14 @@ void draw(GLState &renderer, GLContext &context, const FeatureState &features, S
 
     context.last_draw_vertex_program_hash = context.record.vertex_program.get(mem)->renderer_data->hash;
     context.last_draw_fragment_program_hash = context.record.fragment_program.get(mem)->renderer_data->hash;
+
+    context.vertex_stream_ring_buffer.draw_call_done();
+    context.index_stream_ring_buffer.draw_call_done();
+    context.vertex_uniform_stream_ring_buffer.draw_call_done();
+    context.fragment_uniform_stream_ring_buffer.draw_call_done();
+    context.vertex_info_uniform_buffer.draw_call_done();
+    context.fragment_info_uniform_buffer.draw_call_done();
+
+    clear_previous_uniform_storage(context);
 }
 } // namespace renderer::gl

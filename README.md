@@ -4,7 +4,7 @@
 
 ## Introduction
 
-Vita3K is an experimental PlayStation Vita emulator for Windows, Linux and macOS.
+Vita3K is an experimental PlayStation Vita emulator for Windows and Linux.
 
 * [Website](https://vita3k.org/) (information for users)
 * [Wiki](https://github.com/Vita3K/Vita3K/wiki) (information for developers)
@@ -36,10 +36,18 @@ The emulator currently runs some homebrew programs. It is also able to load some
 Vita3K is licensed under the **GPLv2** license. This is largely dictated by external dependencies, most notably Unicorn.
 
 ## Downloads
-* [Windows](https://github.com/Vita3K/Vita3K/actions?query=event%3Apush+is%3Asuccess+branch%3Amaster)
-  * [Visual C++ Redistributables](https://aka.ms/vs/16/release/vc_redist.x64.exe) (Install if not working.) 
-* [Linux](https://github.com/Vita3K/Vita3K/actions?query=event%3Apush+is%3Asuccess+branch%3Amaster)
-* [macOS](https://github.com/Vita3K/Vita3K/actions?query=event%3Apush+is%3Asuccess+branch%3Amaster)
+* Windows
+  * [Scoop](https://scoop.sh/#/apps?q=vita3k&s=0&d=1&o=true)
+  * Requirements:
+    * [Microsoft Visual C++ 2015-2022 Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe)
+* Linux
+  * Arch based:
+    * [vita3k-bin](https://aur.archlinux.org/packages/vita3k-bin)<sup><small>AUR</small></sup>
+    * [vita3k-git](https://aur.archlinux.org/packages/vita3k-git)<sup><small>AUR</small></sup>
+  * Requirements:
+    * xdg-desktop-portal
+* Others
+  * [Download Artifact](https://github.com/Vita3K/Vita3K/actions?query=event%3Apush+is%3Asuccess+branch%3Amaster)
 
 ## Building
 

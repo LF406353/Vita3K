@@ -21,9 +21,11 @@
 #include <util/align.h>
 #include <util/log.h>
 
-using namespace shader::usse;
+namespace shader {
 
-GenericType shader::translate_generic_type(const gxp::GenericParameterType &type) {
+using namespace usse;
+
+GenericType translate_generic_type(const gxp::GenericParameterType &type) {
     switch (type) {
     case gxp::GenericParameterType::Scalar:
         return GenericType::SCALER;
@@ -36,7 +38,7 @@ GenericType shader::translate_generic_type(const gxp::GenericParameterType &type
     }
 }
 
-std::tuple<DataType, std::string> shader::get_parameter_type_store_and_name(const SceGxmParameterType &type) {
+std::tuple<DataType, std::string> get_parameter_type_store_and_name(const SceGxmParameterType &type) {
     switch (type) {
     case SCE_GXM_PARAMETER_TYPE_F32: {
         return std::make_tuple(DataType::F32, "float");
@@ -74,12 +76,16 @@ std::tuple<DataType, std::string> shader::get_parameter_type_store_and_name(cons
     }
 }
 
-ProgramInput shader::get_program_input(const SceGxmProgram &program) {
+ProgramInput get_program_input(const SceGxmProgram &program) {
     ProgramInput program_input;
     std::map<int, UniformBuffer> uniform_buffers;
 
     // TODO split these to functions (e.g. get_literals, get_paramters)
     const SceGxmProgramParameter *const gxp_parameters = gxp::program_parameters(program);
+    auto vertex_varyings_ptr = program.vertex_varyings();
+
+    std::uint32_t investigated_ub = 0;
+    bool seems_symbols_stripped = (program.primary_reg_count == 0);
 
     for (size_t i = 0; i < program.parameter_count; ++i) {
         const SceGxmProgramParameter &parameter = gxp_parameters[i];
@@ -99,7 +105,7 @@ ProgramInput shader::get_program_input(const SceGxmProgram &program) {
             auto container = gxp::get_container_by_index(program, parameter.container_index);
             std::uint32_t offset = parameter.resource_index;
 
-            if (container) {
+            if (container && is_uniform) {
                 offset = container->base_sa_offset + parameter.resource_index;
             }
 
@@ -118,10 +124,11 @@ ProgramInput shader::get_program_input(const SceGxmProgram &program) {
                 item.generic_type = translate_generic_type(param_type);
                 item.bank = RegisterBank::PRIMATTR;
 
-                AttributeInputSource source;
+                AttributeInputSource source = {};
                 source.name = var_name;
                 source.index = parameter.resource_index;
                 source.semantic = parameter.semantic;
+                source.regformat = (vertex_varyings_ptr->untyped_pa_regs & ((uint64_t)1 << parameter.resource_index)) != 0;
 
                 item.source = source;
                 program_input.inputs.push_back(item);
@@ -136,6 +143,9 @@ ProgramInput shader::get_program_input(const SceGxmProgram &program) {
                 }
                 const uint32_t parameter_size = parameter.array_size * vector_size;
                 const uint32_t parameter_size_in_f32 = (parameter_size + 3) / 4;
+
+                investigated_ub |= (1 << parameter.container_index);
+
                 if (uniform_buffers.find(parameter.container_index) == uniform_buffers.end()) {
                     const std::uint32_t reg_block_size = container ? container->size_in_f32 : 0;
 
@@ -143,13 +153,16 @@ ProgramInput shader::get_program_input(const SceGxmProgram &program) {
                     buffer.index = parameter.container_index;
                     buffer.reg_block_size = reg_block_size;
                     buffer.rw = false;
-                    buffer.reg_start_offset = offset;
+                    buffer.reg_start_offset = container ? container->base_sa_offset : offset;
                     buffer.size = parameter.resource_index + parameter_size_in_f32;
                     uniform_buffers.emplace(parameter.container_index, buffer);
                 } else {
                     auto &buffer = uniform_buffers.at(parameter.container_index);
                     buffer.size = std::max(parameter.resource_index + parameter_size_in_f32, buffer.size);
-                    buffer.reg_start_offset = std::min(buffer.reg_start_offset, static_cast<uint32_t>(offset));
+
+                    if (!container) {
+                        buffer.reg_start_offset = std::min(buffer.reg_start_offset, static_cast<uint32_t>(offset));
+                    }
                 }
             }
             break;
@@ -191,7 +204,15 @@ ProgramInput shader::get_program_input(const SceGxmProgram &program) {
         }
     }
 
-    for (auto &[_, buffer] : uniform_buffers) {
+    for (auto &[index, buffer] : uniform_buffers) {
+        static constexpr std::uint32_t MAXIMUM_GXP_ARRAY_SIZE = 1024;
+        if ((((investigated_ub & (1 << index)) == 0) && seems_symbols_stripped) || (buffer.size == MAXIMUM_GXP_ARRAY_SIZE)) {
+            // Symbols stripped shader with uniform buffer not referencing any uniform parameters, or
+            // buffer that has the potential of outsizing 1024 (due to limits on the size variable), will
+            // got their buffer turns to MAX_UB_IN_VEC4_UNIT here. Their upload amount will be controlled!
+            buffer.size = SCE_GXM_MAX_UB_IN_FLOAT_UNIT;
+        }
+
         program_input.uniform_buffers.push_back(buffer);
     }
 
@@ -209,6 +230,7 @@ ProgramInput shader::get_program_input(const SceGxmProgram &program) {
         buffer.size = program.default_uniform_buffer_count;
 
         program_input.uniform_buffers.push_back(buffer);
+        uniform_buffers.emplace(14, buffer);
     }
 
     const auto buffer_infoes = reinterpret_cast<const SceGxmUniformBufferInfo *>(
@@ -258,7 +280,20 @@ ProgramInput shader::get_program_input(const SceGxmProgram &program) {
             item.component_count = 1;
             item.array_size = 1;
             DependentSamplerInputSource source;
-            source.name = sampler->name;
+
+            if (sampler == program_input.samplers.end()) {
+                source.name = fmt::format("anonymousSampler{}", rsc_index);
+
+                Sampler sampler_info;
+                sampler_info.name = source.name;
+                sampler_info.index = rsc_index;
+                sampler_info.is_cube = false; // I don't know :(
+
+                program_input.samplers.push_back(std::move(sampler_info));
+            } else {
+                source.name = sampler->name;
+            }
+
             source.index = rsc_index;
             item.source = source;
 
@@ -300,8 +335,6 @@ ProgramInput shader::get_program_input(const SceGxmProgram &program) {
 
     // Parse special semantics
     if (program.is_vertex()) {
-        auto vertex_varyings_ptr = program.vertex_varyings();
-
         Input item;
         item.component_count = 1;
         item.array_size = 1;
@@ -310,9 +343,10 @@ ProgramInput shader::get_program_input(const SceGxmProgram &program) {
         item.type = DataType::UINT32;
 
         if (program.program_flags & SCE_GXM_PROGRAM_FLAG_INDEX_USED) {
-            AttributeInputSource source;
+            AttributeInputSource source = {};
             source.semantic = SCE_GXM_PARAMETER_SEMANTIC_INDEX;
             source.name = "gl_VertexID";
+            source.regformat = false;
 
             item.offset = vertex_varyings_ptr->semantic_index_offset;
             item.source = source;
@@ -321,9 +355,10 @@ ProgramInput shader::get_program_input(const SceGxmProgram &program) {
         }
 
         if (program.program_flags & SCE_GXM_PROGRAM_FLAG_INSTANCE_USED) {
-            AttributeInputSource source;
+            AttributeInputSource source = {};
             source.semantic = SCE_GXM_PARAMETER_SEMANTIC_INSTANCE;
             source.name = "gl_InstanceID";
+            source.regformat = false;
 
             item.offset = vertex_varyings_ptr->semantic_instance_offset;
             item.source = source;
@@ -334,3 +369,112 @@ ProgramInput shader::get_program_input(const SceGxmProgram &program) {
 
     return program_input;
 }
+
+DataType get_texture_component_type(SceGxmTextureFormat format) {
+    SceGxmTextureBaseFormat base_format = gxm::get_base_format(format);
+    // TODO: won't be surprised if some of them are wrong
+    switch (base_format) {
+    case SCE_GXM_TEXTURE_BASE_FORMAT_U8:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_U4U4U4U4:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_U8U3U3U2:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_U1U5U5U5:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_U5U6U5:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_S5S5U6:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_U8U8:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_U8U8U8U8:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_P4:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_P8:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_U8U8U8:
+        return DataType::UINT8;
+
+    case SCE_GXM_TEXTURE_BASE_FORMAT_S8:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_S8S8:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_S8S8S8S8:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_X8S8S8U8:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_S8S8S8:
+        return DataType::INT8;
+
+    case SCE_GXM_TEXTURE_BASE_FORMAT_U16:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_U2U10U10U10:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_U16U16:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_U16U16U16U16:
+        return DataType::UINT16;
+
+    case SCE_GXM_TEXTURE_BASE_FORMAT_S16:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_S16S16:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_S16S16S16S16:
+        return DataType::INT16;
+
+    case SCE_GXM_TEXTURE_BASE_FORMAT_F16:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_F16F16:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_SE5M9M9M9:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_F11F11F10:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_F16F16F16F16:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_U2F10F10F10:
+        return DataType::F16;
+
+    case SCE_GXM_TEXTURE_BASE_FORMAT_F32:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_F32M:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_X8U24:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_F32F32:
+    // should these formats be left as F32?
+    case SCE_GXM_TEXTURE_BASE_FORMAT_U32:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_U32U32:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_S32:
+        return DataType::F32;
+
+    // TODO are these stored as U8, F16 or F32?
+    case SCE_GXM_TEXTURE_BASE_FORMAT_PVRT2BPP:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_PVRT4BPP:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_PVRTII2BPP:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_PVRTII4BPP:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_UBC1:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_UBC2:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_UBC3:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_UBC4:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_SBC4:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_UBC5:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_SBC5:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_YUV420P2:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_YUV420P3:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_YUV422:
+        return DataType::UINT8;
+    }
+}
+
+uint8_t get_texture_component_count(SceGxmTextureFormat format) {
+    const SceGxmTextureBaseFormat base_format = gxm::get_base_format(format);
+    const uint32_t swizzle = format & SCE_GXM_TEXTURE_SWIZZLE_MASK;
+    switch (base_format) {
+    // 1 Component.
+    case SCE_GXM_TEXTURE_BASE_FORMAT_U8:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_S8:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_U16:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_S16:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_F16:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_U32:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_S32:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_F32:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_F32M:
+        return (swizzle == SCE_GXM_TEXTURE_SWIZZLE1_R) ? 1U : 4U;
+
+    // 2 components
+    case SCE_GXM_TEXTURE_BASE_FORMAT_U8U8:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_S8S8:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_U16U16:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_S16S16:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_F16F16:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_U32U32:
+    case SCE_GXM_TEXTURE_BASE_FORMAT_F32F32:
+        return (swizzle == SCE_GXM_TEXTURE_SWIZZLE2_GR) ? 2U : 4U;
+
+    case SCE_GXM_TEXTURE_BASE_FORMAT_X8U24:
+        return 1U;
+
+    // 3 and 4 components, always 4
+    default:
+        return 4U;
+    }
+}
+
+} // namespace shader

@@ -17,7 +17,9 @@
 
 #include "private.h"
 
+#include <config/state.h>
 #include <gui/functions.h>
+#include <io/state.h>
 
 #include <util/log.h>
 #include <util/safe_time.h>
@@ -28,11 +30,11 @@ namespace gui {
 
 static std::map<double, std::string> update_history_infos;
 
-static bool get_update_history(GuiState &gui, HostState &host, const std::string &app_path) {
+static bool get_update_history(GuiState &gui, EmuEnvState &emuenv, const std::string &app_path) {
     update_history_infos.clear();
-    const auto change_info_path{ fs::path(host.pref_path) / "ux0/app" / app_path / "sce_sys/changeinfo/" };
+    const auto change_info_path{ fs::path(emuenv.pref_path) / "ux0/app" / app_path / "sce_sys/changeinfo/" };
 
-    std::string fname = fs::exists(change_info_path / fmt::format("changeinfo_{:0>2d}.xml", host.cfg.sys_lang)) ? fmt::format("changeinfo_{:0>2d}.xml", host.cfg.sys_lang) : "changeinfo.xml";
+    std::string fname = fs::exists(change_info_path / fmt::format("changeinfo_{:0>2d}.xml", emuenv.cfg.sys_lang)) ? fmt::format("changeinfo_{:0>2d}.xml", emuenv.cfg.sys_lang) : "changeinfo.xml";
 
     pugi::xml_document doc;
     pugi::xml_parse_result result = doc.load_file((change_info_path.string() + fname).c_str());
@@ -73,8 +75,8 @@ static bool get_update_history(GuiState &gui, HostState &host, const std::string
     return !update_history_infos.empty();
 }
 
-std::vector<TimeApp>::iterator get_time_app_index(GuiState &gui, HostState &host, const std::string app) {
-    const auto time_app_index = std::find_if(gui.time_apps[host.io.user_id].begin(), gui.time_apps[host.io.user_id].end(), [&](const TimeApp &t) {
+std::vector<TimeApp>::iterator get_time_app_index(GuiState &gui, EmuEnvState &emuenv, const std::string app) {
+    const auto time_app_index = std::find_if(gui.time_apps[emuenv.io.user_id].begin(), gui.time_apps[emuenv.io.user_id].end(), [&](const TimeApp &t) {
         return t.app == app;
     });
 
@@ -116,9 +118,9 @@ static std::string get_time_app_used(const int64_t &time_used) {
     }
 }
 
-void get_time_apps(GuiState &gui, HostState &host) {
+void get_time_apps(GuiState &gui, EmuEnvState &emuenv) {
     gui.time_apps.clear();
-    const auto time_path{ fs::path(host.pref_path) / "ux0/user/time.xml" };
+    const auto time_path{ fs::path(emuenv.pref_path) / "ux0/user/time.xml" };
 
     pugi::xml_document time_xml;
     if (fs::exists(time_path)) {
@@ -138,7 +140,7 @@ void get_time_apps(GuiState &gui, HostState &host) {
     }
 }
 
-static void save_time_apps(GuiState &gui, HostState &host) {
+static void save_time_apps(GuiState &gui, EmuEnvState &emuenv) {
     pugi::xml_document time_xml;
     auto declarationUser = time_xml.append_child(pugi::node_declaration);
     declarationUser.append_attribute("version") = "1.0";
@@ -163,28 +165,28 @@ static void save_time_apps(GuiState &gui, HostState &host) {
         }
     }
 
-    const auto time_path{ fs::path(host.pref_path) / "ux0/user/time.xml" };
+    const auto time_path{ fs::path(emuenv.pref_path) / "ux0/user/time.xml" };
     const auto save_xml = time_xml.save_file(time_path.c_str());
     if (!save_xml)
         LOG_ERROR("Fail save xml");
 }
 
-void update_time_app_used(GuiState &gui, HostState &host, const std::string &app) {
-    const auto &time_app_index = get_time_app_index(gui, host, app);
+void update_time_app_used(GuiState &gui, EmuEnvState &emuenv, const std::string &app) {
+    const auto &time_app_index = get_time_app_index(gui, emuenv, app);
     time_app_index->time_used += std::time(nullptr) - time_app_index->last_time_used;
 
-    save_time_apps(gui, host);
+    save_time_apps(gui, emuenv);
 }
 
-void update_last_time_app_used(GuiState &gui, HostState &host, const std::string &app) {
-    const auto &time_app_index = get_time_app_index(gui, host, app);
-    if (time_app_index != gui.time_apps[host.io.user_id].end())
+void update_last_time_app_used(GuiState &gui, EmuEnvState &emuenv, const std::string &app) {
+    const auto &time_app_index = get_time_app_index(gui, emuenv, app);
+    if (time_app_index != gui.time_apps[emuenv.io.user_id].end())
         time_app_index->last_time_used = std::time(nullptr);
     else
-        gui.time_apps[host.io.user_id].push_back({ app, std::time(nullptr), 0 });
+        gui.time_apps[emuenv.io.user_id].push_back({ app, std::time(nullptr), 0 });
 
     get_app_index(gui, app)->last_time = std::time(nullptr);
-    if (gui.users[host.io.user_id].sort_apps_type == LAST_TIME) {
+    if (gui.users[emuenv.io.user_id].sort_apps_type == LAST_TIME) {
         const auto sorted = gui.app_selector.app_list_sorted[LAST_TIME];
         std::sort(gui.app_selector.user_apps.begin(), gui.app_selector.user_apps.end(), [&sorted](const App &lhs, const App &rhs) {
             switch (sorted) {
@@ -199,17 +201,17 @@ void update_last_time_app_used(GuiState &gui, HostState &host, const std::string
         });
     }
 
-    save_time_apps(gui, host);
+    save_time_apps(gui, emuenv);
 }
 
-void delete_app(GuiState &gui, HostState &host, const std::string &app_path) {
+void delete_app(GuiState &gui, EmuEnvState &emuenv, const std::string &app_path) {
     const auto APP_INDEX = get_app_index(gui, app_path);
     const auto title_id = APP_INDEX->title_id;
     try {
-        const auto PREF_PATH = fs::path(host.pref_path);
+        const auto PREF_PATH = fs::path(emuenv.pref_path);
         fs::remove_all(PREF_PATH / "ux0/app" / app_path);
 
-        const auto BASE_PATH = fs::path(host.base_path);
+        const auto BASE_PATH = fs::path(emuenv.base_path);
         const auto CUSTOM_CONFIG_PATH{ BASE_PATH / "config" / fmt::format("config_{}.xml", app_path) };
         if (fs::exists(CUSTOM_CONFIG_PATH))
             fs::remove_all(CUSTOM_CONFIG_PATH);
@@ -222,7 +224,7 @@ void delete_app(GuiState &gui, HostState &host, const std::string &app_path) {
         const auto PATCH_PATH{ PREF_PATH / "ux0/patch" / title_id };
         if (fs::exists(PATCH_PATH))
             fs::remove_all(PATCH_PATH);
-        const auto SAVE_DATA_PATH{ PREF_PATH / "ux0/user" / host.io.user_id / "savedata" / APP_INDEX->savedata };
+        const auto SAVE_DATA_PATH{ PREF_PATH / "ux0/user" / emuenv.io.user_id / "savedata" / APP_INDEX->savedata };
         if (fs::exists(SAVE_DATA_PATH))
             fs::remove_all(SAVE_DATA_PATH);
         const auto SHADER_CACHE_PATH{ BASE_PATH / "cache/shaders" / title_id };
@@ -237,17 +239,17 @@ void delete_app(GuiState &gui, HostState &host, const std::string &app_path) {
             gui.app_selector.user_apps_icon.erase(app_path);
         }
 
-        const auto time_app_index = get_time_app_index(gui, host, app_path);
-        if (time_app_index != gui.time_apps[host.io.user_id].end()) {
-            gui.time_apps[host.io.user_id].erase(time_app_index);
-            save_time_apps(gui, host);
+        const auto time_app_index = get_time_app_index(gui, emuenv, app_path);
+        if (time_app_index != gui.time_apps[emuenv.io.user_id].end()) {
+            gui.time_apps[emuenv.io.user_id].erase(time_app_index);
+            save_time_apps(gui, emuenv);
         }
 
         LOG_INFO("Application successfully deleted '{} [{}]'.", title_id, APP_INDEX->title);
 
         gui.app_selector.user_apps.erase(APP_INDEX);
 
-        save_apps_cache(gui, host);
+        save_apps_cache(gui, emuenv);
     } catch (std::exception &e) {
         LOG_ERROR("Failed to delete '{} [{}]'.\n{}", title_id, APP_INDEX->title, e.what());
     }
@@ -269,37 +271,41 @@ void open_path(const std::string &path) {
 
 static std::string context_dialog;
 
-void draw_app_context_menu(GuiState &gui, HostState &host, const std::string &app_path) {
+void draw_app_context_menu(GuiState &gui, EmuEnvState &emuenv, const std::string &app_path) {
     const auto APP_INDEX = get_app_index(gui, app_path);
     const auto title_id = APP_INDEX->title_id;
 
-    const auto APP_PATH{ fs::path(host.pref_path) / "ux0/app" / app_path };
-    const auto CUSTOM_CONFIG_PATH{ fs::path(host.base_path) / "config" / fmt::format("config_{}.xml", app_path) };
-    const auto ADDCONT_PATH{ fs::path(host.pref_path) / "ux0/addcont" / APP_INDEX->addcont };
-    const auto LICENSE_PATH{ fs::path(host.pref_path) / "ux0/license" / title_id };
-    const auto SAVE_DATA_PATH{ fs::path(host.pref_path) / "ux0/user" / host.io.user_id / "savedata" / APP_INDEX->savedata };
-    const auto SHADER_CACHE_PATH{ fs::path(host.base_path) / "cache/shaders" / title_id };
-    const auto SHADER_LOG_PATH{ fs::path(host.base_path) / "shaderlog" / title_id };
+    const auto APP_PATH{ fs::path(emuenv.pref_path) / "ux0/app" / app_path };
+    const auto CUSTOM_CONFIG_PATH{ fs::path(emuenv.base_path) / "config" / fmt::format("config_{}.xml", app_path) };
+    const auto ADDCONT_PATH{ fs::path(emuenv.pref_path) / "ux0/addcont" / APP_INDEX->addcont };
+    const auto LICENSE_PATH{ fs::path(emuenv.pref_path) / "ux0/license" / title_id };
+    const auto MANUAL_PATH{ APP_PATH / "sce_sys/manual" };
+    const auto SAVE_DATA_PATH{ fs::path(emuenv.pref_path) / "ux0/user" / emuenv.io.user_id / "savedata" / APP_INDEX->savedata };
+    const auto SHADER_CACHE_PATH{ fs::path(emuenv.base_path) / "cache/shaders" / title_id };
+    const auto SHADER_LOG_PATH{ fs::path(emuenv.base_path) / "shaderlog" / title_id };
 
     const auto display_size = ImGui::GetIO().DisplaySize;
-    const auto RES_SCALE = ImVec2(display_size.x / host.res_width_dpi_scale, display_size.y / host.res_height_dpi_scale);
+    const auto RES_SCALE = ImVec2(display_size.x / emuenv.res_width_dpi_scale, display_size.y / emuenv.res_height_dpi_scale);
 
-    const auto is_12_hour_format = host.cfg.sys_time_format == SCE_SYSTEM_PARAM_TIME_FORMAT_12HOUR;
-    auto common = host.common_dialog.lang.common;
+    const auto is_12_hour_format = emuenv.cfg.sys_time_format == SCE_SYSTEM_PARAM_TIME_FORMAT_12HOUR;
+
     auto lang = gui.lang.app_context;
+    auto app_str = gui.lang.content_manager.application;
+    auto savedata_str = gui.lang.content_manager.saved_data;
+    auto common = emuenv.common_dialog.lang.common;
 
     // App Context Menu
     if (ImGui::BeginPopupContextItem("##app_context_menu")) {
-        ImGui::SetWindowFontScale(1.3f * RES_SCALE.x);
-        if (ImGui::MenuItem("Boot"))
-            pre_load_app(gui, host, false, app_path);
+        ImGui::SetWindowFontScale(1.1f);
+        if (ImGui::MenuItem(lang["boot"].c_str()))
+            pre_load_app(gui, emuenv, false, app_path);
         if (title_id.find("NPXS") == std::string::npos) {
-            if (ImGui::MenuItem("Check App Compatibility")) {
+            if (ImGui::MenuItem(lang["check_app_compatibility"].c_str())) {
                 const std::string compat_url = title_id.find("PCS") != std::string::npos ? "https://vita3k.org/compatibility?g=" + title_id : "https://github.com/Vita3K/homebrew-compatibility/issues?q=" + APP_INDEX->title;
                 open_path(compat_url);
             }
-            if (ImGui::BeginMenu("Copy App Info")) {
-                if (ImGui::MenuItem("ID and Name")) {
+            if (ImGui::BeginMenu(lang["copy_app_info"].c_str())) {
+                if (ImGui::MenuItem(lang["id_and_name"].c_str())) {
                     ImGui::LogToClipboard();
                     ImGui::LogText("%s [%s]", title_id.c_str(), APP_INDEX->title.c_str());
                     ImGui::LogFinish();
@@ -309,68 +315,68 @@ void draw_app_context_menu(GuiState &gui, HostState &host, const std::string &ap
                     ImGui::LogText("%s", title_id.c_str());
                     ImGui::LogFinish();
                 }
-                if (ImGui::MenuItem("Name")) {
+                if (ImGui::MenuItem(lang["name"].c_str())) {
                     ImGui::LogToClipboard();
                     ImGui::LogText("%s", APP_INDEX->title.c_str());
                     ImGui::LogFinish();
                 }
                 ImGui::EndMenu();
             }
-            if (ImGui::BeginMenu("Custom Config")) {
+            if (ImGui::BeginMenu(lang["custom_config"].c_str())) {
                 if (!fs::exists(CUSTOM_CONFIG_PATH)) {
-                    if (ImGui::MenuItem("Create", nullptr, &gui.configuration_menu.custom_settings_dialog))
-                        init_config(gui, host, app_path);
+                    if (ImGui::MenuItem(lang["create"].c_str(), nullptr, &gui.configuration_menu.custom_settings_dialog))
+                        init_config(gui, emuenv, app_path);
                 } else {
-                    if (ImGui::MenuItem("Edit", nullptr, &gui.configuration_menu.custom_settings_dialog))
-                        init_config(gui, host, app_path);
-                    if (ImGui::MenuItem("Remove"))
+                    if (ImGui::MenuItem(lang["edit"].c_str(), nullptr, &gui.configuration_menu.custom_settings_dialog))
+                        init_config(gui, emuenv, app_path);
+                    if (ImGui::MenuItem(lang["remove"].c_str()))
                         fs::remove(CUSTOM_CONFIG_PATH);
                 }
                 ImGui::EndMenu();
             }
-            if (ImGui::BeginMenu("Open Folder")) {
-                if (ImGui::MenuItem("Application"))
+            if (ImGui::BeginMenu(lang["open_folder"].c_str())) {
+                if (ImGui::MenuItem(app_str["title"].c_str()))
                     open_path(APP_PATH.string());
-                if (fs::exists(ADDCONT_PATH) && ImGui::MenuItem("AddCont"))
+                if (fs::exists(ADDCONT_PATH) && ImGui::MenuItem(lang["addcont"].c_str()))
                     open_path(ADDCONT_PATH.string());
-                if (fs::exists(LICENSE_PATH) && ImGui::MenuItem("License"))
+                if (fs::exists(LICENSE_PATH) && ImGui::MenuItem(lang["license"].c_str()))
                     open_path(LICENSE_PATH.string());
-                if (fs::exists(SAVE_DATA_PATH) && ImGui::MenuItem("Save Data"))
+                if (fs::exists(SAVE_DATA_PATH) && ImGui::MenuItem(savedata_str["title"].c_str()))
                     open_path(SAVE_DATA_PATH.string());
-                if (fs::exists(SHADER_CACHE_PATH) && ImGui::MenuItem("Shader Cache"))
+                if (fs::exists(SHADER_CACHE_PATH) && ImGui::MenuItem(lang["shader_cache"].c_str()))
                     open_path(SHADER_CACHE_PATH.string());
-                if (fs::exists(SHADER_LOG_PATH) && ImGui::MenuItem("Shader Log"))
+                if (fs::exists(SHADER_LOG_PATH) && ImGui::MenuItem(lang["shader_log"].c_str()))
                     open_path(SHADER_LOG_PATH.string());
                 ImGui::EndMenu();
             }
-            if (!host.cfg.show_live_area_screen && ImGui::BeginMenu("Live Area")) {
+            if (!emuenv.cfg.show_live_area_screen && ImGui::BeginMenu("Live Area")) {
                 if (ImGui::MenuItem("Live Area", nullptr, &gui.live_area.live_area_screen))
-                    open_live_area(gui, host, app_path);
+                    open_live_area(gui, emuenv, app_path);
                 if (ImGui::MenuItem("Search", nullptr))
                     open_search(APP_INDEX->title);
-                if (ImGui::MenuItem("Manual", nullptr))
-                    open_manual(gui, host, app_path);
+                if (fs::exists(MANUAL_PATH) && !fs::is_empty(MANUAL_PATH) && ImGui::MenuItem("Manual", nullptr))
+                    open_manual(gui, emuenv, app_path);
                 if (ImGui::MenuItem("Update"))
-                    update_app(gui, host, app_path);
+                    update_app(gui, emuenv, app_path);
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu(common["delete"].c_str())) {
-                if (ImGui::MenuItem("Application"))
+                if (ImGui::MenuItem(app_str["title"].c_str()))
                     context_dialog = "app";
-                if (fs::exists(ADDCONT_PATH) && ImGui::MenuItem("AddCont"))
+                if (fs::exists(ADDCONT_PATH) && ImGui::MenuItem(lang["addcont"].c_str()))
                     fs::remove_all(ADDCONT_PATH);
-                if (fs::exists(LICENSE_PATH) && ImGui::MenuItem("License"))
+                if (fs::exists(LICENSE_PATH) && ImGui::MenuItem(lang["license"].c_str()))
                     fs::remove_all(LICENSE_PATH);
-                if (fs::exists(SAVE_DATA_PATH) && ImGui::MenuItem("Save Data"))
+                if (fs::exists(SAVE_DATA_PATH) && ImGui::MenuItem(savedata_str["title"].c_str()))
                     context_dialog = "save";
-                if (fs::exists(SHADER_CACHE_PATH) && ImGui::MenuItem("Shader Cache"))
+                if (fs::exists(SHADER_CACHE_PATH) && ImGui::MenuItem(lang["shader_cache"].c_str()))
                     fs::remove_all(SHADER_CACHE_PATH);
-                if (fs::exists(SHADER_LOG_PATH) && ImGui::MenuItem("Shader Log"))
+                if (fs::exists(SHADER_LOG_PATH) && ImGui::MenuItem(lang["shader_log"].c_str()))
                     fs::remove_all(SHADER_LOG_PATH);
                 ImGui::EndMenu();
             }
             if (fs::exists(APP_PATH / "sce_sys/changeinfo/") && ImGui::MenuItem(lang["update_history"].c_str())) {
-                if (get_update_history(gui, host, app_path))
+                if (get_update_history(gui, emuenv, app_path))
                     context_dialog = "history";
                 else
                     LOG_WARN("Patch note Error for title id: {} in path: {}", title_id, app_path);
@@ -378,8 +384,8 @@ void draw_app_context_menu(GuiState &gui, HostState &host, const std::string &ap
         }
         if (ImGui::MenuItem(lang["information"].c_str(), nullptr, &gui.live_area.app_information)) {
             if (title_id.find("NPXS") == std::string::npos) {
-                get_app_info(gui, host, app_path);
-                const auto app_size = get_app_size(gui, host, app_path);
+                get_app_info(gui, emuenv, app_path);
+                const auto app_size = get_app_size(gui, emuenv, app_path);
                 gui.app_selector.app_info.size = app_size;
             }
             gui.live_area.information_bar = false;
@@ -387,7 +393,7 @@ void draw_app_context_menu(GuiState &gui, HostState &host, const std::string &ap
         ImGui::EndPopup();
     }
 
-    const auto SCALE = ImVec2(RES_SCALE.x * host.dpi_scale, RES_SCALE.y * host.dpi_scale);
+    const auto SCALE = ImVec2(RES_SCALE.x * emuenv.dpi_scale, RES_SCALE.y * emuenv.dpi_scale);
     const auto WINDOW_SIZE = ImVec2(756.0f * SCALE.x, 436.0f * SCALE.y);
 
     const auto BUTTON_SIZE = ImVec2(320.f * SCALE.x, 46.f * SCALE.y);
@@ -410,7 +416,8 @@ void draw_app_context_menu(GuiState &gui, HostState &host, const std::string &ap
             ImGui::BeginChild("##info_update_list", ImVec2(WINDOW_SIZE.x - (30.f * SCALE.x), WINDOW_SIZE.y - (BUTTON_SIZE.y * 2.f) - (25.f * SCALE.y)), false, ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings);
             for (const auto &update : update_history_infos) {
                 ImGui::SetWindowFontScale(1.4f);
-                ImGui::TextColored(GUI_COLOR_TEXT, "Version %.2f", update.first);
+                const auto version_str = fmt::format(fmt::runtime(lang["history_version"].c_str()), update.first);
+                ImGui::TextColored(GUI_COLOR_TEXT, "%s", version_str.c_str());
                 ImGui::SetWindowFontScale(1.f);
                 ImGui::PushTextWrapPos(WINDOW_SIZE.x - (80.f * SCALE.x));
                 ImGui::TextColored(GUI_COLOR_TEXT, "%s\n", update.second.c_str());
@@ -436,18 +443,18 @@ void draw_app_context_menu(GuiState &gui, HostState &host, const std::string &ap
             ImGui::TextColored(GUI_COLOR_TEXT, "%s", ask_delete);
             ImGui::PopTextWrapPos();
             if ((context_dialog == "app") && ImGui::IsItemHovered())
-                ImGui::SetTooltip("Deleting a application may take a while\ndepending on its size and your hardware.");
+                ImGui::SetTooltip("%s", lang["app_delete_note"].c_str());
             ImGui::SetWindowFontScale(1.4f * RES_SCALE.x);
             ImGui::SetCursorPos(ImVec2((WINDOW_SIZE.x / 2) - (BUTTON_SIZE.x + (20.f * SCALE.x)), WINDOW_SIZE.y - BUTTON_SIZE.y - (24.0f * SCALE.y)));
-            if (ImGui::Button(common["cancel"].c_str(), BUTTON_SIZE) || ImGui::IsKeyPressed(host.cfg.keyboard_button_circle)) {
+            if (ImGui::Button(common["cancel"].c_str(), BUTTON_SIZE) || ImGui::IsKeyPressed(emuenv.cfg.keyboard_button_circle)) {
                 context_dialog.clear();
             }
             ImGui::SameLine();
             ImGui::SetCursorPosX((WINDOW_SIZE.x / 2.f) + (20.f * SCALE.x));
         }
-        if (ImGui::Button("OK", BUTTON_SIZE) || ImGui::IsKeyPressed(host.cfg.keyboard_button_cross)) {
+        if (ImGui::Button("OK", BUTTON_SIZE) || ImGui::IsKeyPressed(emuenv.cfg.keyboard_button_cross)) {
             if (context_dialog == "app")
-                delete_app(gui, host, app_path);
+                delete_app(gui, emuenv, app_path);
             else if (context_dialog == "save")
                 fs::remove_all(SAVE_DATA_PATH);
             context_dialog.clear();
@@ -465,7 +472,7 @@ void draw_app_context_menu(GuiState &gui, HostState &host, const std::string &ap
         ImGui::Begin("##information", &gui.live_area.app_information, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
         ImGui::SetWindowFontScale(1.5f * RES_SCALE.x);
         ImGui::SetCursorPos(ImVec2(10.0f * SCALE.x, 10.0f * SCALE.y));
-        if (ImGui::Button("X", ImVec2(40.f * SCALE.x, 40.f * SCALE.y)) || ImGui::IsKeyPressed(host.cfg.keyboard_button_circle)) {
+        if (ImGui::Button("X", ImVec2(40.f * SCALE.x, 40.f * SCALE.y)) || ImGui::IsKeyPressed(emuenv.cfg.keyboard_button_circle)) {
             gui.live_area.app_information = false;
             gui.live_area.information_bar = true;
         }
@@ -490,7 +497,7 @@ void draw_app_context_menu(GuiState &gui, HostState &host, const std::string &ap
             ImGui::TextColored(GUI_COLOR_TEXT, "%d", *reinterpret_cast<const uint16_t *>(APP_INDEX->parental_level.c_str()));
             ImGui::Spacing();
             ImGui::SetCursorPosX(((display_size.x / 2.f) - ImGui::CalcTextSize((lang["updated"] + "  ").c_str()).x));
-            auto DATE_TIME = get_date_time(gui, host, gui.app_selector.app_info.updated);
+            auto DATE_TIME = get_date_time(gui, emuenv, gui.app_selector.app_info.updated);
             ImGui::TextColored(GUI_COLOR_TEXT, "%s  %s %s", lang["updated"].c_str(), DATE_TIME[DateTime::DATE_MINI].c_str(), DATE_TIME[DateTime::CLOCK].c_str());
             if (is_12_hour_format) {
                 ImGui::SameLine();
@@ -506,11 +513,11 @@ void draw_app_context_menu(GuiState &gui, HostState &host, const std::string &ap
             ImGui::SetCursorPosX((display_size.x / 2.f) - ImGui::CalcTextSize((lang["last_time_used"] + "  ").c_str()).x);
             ImGui::TextColored(GUI_COLOR_TEXT, "%s ", lang["last_time_used"].c_str());
             ImGui::SameLine();
-            const auto time_app_index = get_time_app_index(gui, host, app_path);
-            if (time_app_index != gui.time_apps[host.io.user_id].end()) {
+            const auto time_app_index = get_time_app_index(gui, emuenv, app_path);
+            if (time_app_index != gui.time_apps[emuenv.io.user_id].end()) {
                 tm date_tm = {};
                 SAFE_LOCALTIME(&time_app_index->last_time_used, &date_tm);
-                auto LAST_TIME = get_date_time(gui, host, date_tm);
+                auto LAST_TIME = get_date_time(gui, emuenv, date_tm);
                 ImGui::TextColored(GUI_COLOR_TEXT, "%s %s", LAST_TIME[DateTime::DATE_MINI].c_str(), LAST_TIME[DateTime::CLOCK].c_str());
                 if (is_12_hour_format) {
                     ImGui::SameLine();

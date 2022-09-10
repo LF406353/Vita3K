@@ -15,10 +15,10 @@
 // with this program; if not, write to the Free Software Foundation, Inc.,
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
+#include "Tracy.hpp"
+
 #include <audio/functions.h>
 #include <audio/state.h>
-
-#include <microprofile.h>
 
 #include <util/log.h>
 
@@ -26,19 +26,20 @@
 #include <cassert>
 #include <cstring>
 
-#define AUDIO_PROFILE(name) MICROPROFILE_SCOPEI("Audio", name, MP_THISTLE)
-
 static void mix_out_port(uint8_t *stream, uint8_t *temp_buffer, int len, AudioOutPort &port, const ResumeAudioThread &resume_thread) {
-    AUDIO_PROFILE(__func__);
+    ZoneScopedC(0xF6C2FF); // Tracy - Track function scope with color thistle
 
     // How much data is available?
     std::unique_lock<std::mutex> lock(port.shared.mutex);
     const int bytes_available = SDL_AudioStreamAvailable(port.shared.stream.get());
     assert(bytes_available >= 0);
 
+    if (bytes_available == 0)
+        return;
+
     // Running out of data?
-    // The (len * 2) is just a guess that seems to work.
-    if (bytes_available < (len * 2)) {
+    // The (len * 3) is according to the value in sceAudioOutOutput
+    if (bytes_available < (len * 3)) {
         // Is there a thread waiting for playback to finish?
         if (port.shared.thread >= 0) {
             // Wake the thread up.
@@ -57,7 +58,8 @@ static void mix_out_port(uint8_t *stream, uint8_t *temp_buffer, int len, AudioOu
 }
 
 static void SDLCALL audio_callback(void *userdata, Uint8 *stream, int len) {
-    AUDIO_PROFILE(__func__);
+    tracy::SetThreadName("Host audio thread"); // Tracy - Declare belonging of this function to the audio thread
+    ZoneScopedC(0xF6C2FF); // Tracy - Track function scope with color thistle
 
     assert(userdata != nullptr);
     assert(stream != nullptr);
@@ -80,6 +82,8 @@ static void SDLCALL audio_callback(void *userdata, Uint8 *stream, int len) {
     for (const AudioOutPortPtr &port : ports) {
         mix_out_port(stream, state.callback.temp_buffer.data(), len, *port, state.ro.resume_thread);
     }
+
+    FrameMarkNamed("Audio"); // Tracy - End discontinuous frame for audio rendering
 }
 
 static void close_audio(void *) {
@@ -97,6 +101,7 @@ bool init(AudioState &state, ResumeAudioThread resume_thread) {
     desired.callback = &audio_callback;
     desired.userdata = &state;
 
+    // On my computer (Macdu), the obtained specs are AUDIO_F32 with 480 samples (absolutely not what we asked for...)
     if (SDL_OpenAudio(&desired, &state.ro.spec) != 0) {
         LOG_ERROR("SDL audio error: {}", SDL_GetError());
         return false;

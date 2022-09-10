@@ -1,5 +1,5 @@
 // Vita3K emulator project
-// Copyright (C) 2021 Vita3K team
+// Copyright (C) 2022 Vita3K team
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -26,7 +26,9 @@
 #include <shader/spirv_recompiler.h>
 #include <shader/usse_program_analyzer.h>
 
+#include <display/state.h>
 #include <features/state.h>
+#include <gxm/state.h>
 
 #include <gxm/functions.h>
 #include <gxm/types.h>
@@ -39,6 +41,18 @@
 #include <sstream>
 
 namespace renderer::gl {
+
+GLContext::GLContext()
+    : vertex_stream_ring_buffer(GL_ARRAY_BUFFER, MiB(128))
+    , index_stream_ring_buffer(GL_ELEMENT_ARRAY_BUFFER, MiB(64))
+    , vertex_uniform_stream_ring_buffer(GL_SHADER_STORAGE_BUFFER, MiB(256))
+    , fragment_uniform_stream_ring_buffer(GL_SHADER_STORAGE_BUFFER, MiB(256))
+    , vertex_info_uniform_buffer(GL_UNIFORM_BUFFER, MiB(8))
+    , fragment_info_uniform_buffer(GL_UNIFORM_BUFFER, MiB(8)) {
+    std::memset(&previous_vert_info, 0, sizeof(shader::RenderVertUniformBlock));
+    std::memset(&previous_frag_info, 0, sizeof(shader::RenderFragUniformBlock));
+}
+
 namespace texture {
 bool init(GLTextureCacheState &cache, const bool hashless_texture_cache) {
     cache.select_callback = [&](const std::size_t index, const void *texture) {
@@ -48,13 +62,11 @@ bool init(GLTextureCacheState &cache, const bool hashless_texture_cache) {
         glBindTexture(get_gl_texture_type(*texture_casted), gl_texture);
     };
 
-    cache.configure_texture_callback = [](const std::size_t index, const void *texture) {
-        configure_bound_texture(*reinterpret_cast<const SceGxmTexture *>(texture));
+    cache.configure_texture_callback = [](const renderer::TextureCacheState &text_cache, const void *texture) {
+        configure_bound_texture(text_cache, *reinterpret_cast<const SceGxmTexture *>(texture));
     };
 
-    cache.upload_texture_callback = [](const std::size_t index, const void *texture, const MemState &mem) {
-        upload_bound_texture(*reinterpret_cast<const SceGxmTexture *>(texture), mem);
-    };
+    cache.upload_texture_callback = upload_bound_texture;
 
     cache.use_protect = hashless_texture_cache;
 
@@ -117,7 +129,6 @@ static GLenum translate_blend_factor(SceGxmBlendFactor src) {
 void bind_fundamental(GLContext &context) {
     // Bind the vertex array and element buffer.
     glBindVertexArray(context.vertex_array[0]);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, context.element_buffer[0]);
 }
 
 #if MICROPROFILE_ENABLED
@@ -128,15 +139,9 @@ static void before_callback(const char *name, void *funcptr, int len_args, ...) 
 #endif // MICROPROFILE_ENABLED
 
 static void after_callback(const char *name, void *funcptr, int len_args, ...) {
-    MICROPROFILE_LEAVE();
+    // MICROPROFILE_LEAVE();
     for (GLenum error = glad_glGetError(); error != GL_NO_ERROR; error = glad_glGetError()) {
-#ifndef NDEBUG
-        std::stringstream gl_error;
-        gl_error << error;
-        LOG_ERROR("OpenGL: {} set error {}.", name, gl_error.str());
-#else
-        LOG_ERROR("OpenGL error: {}", log_hex(static_cast<std::uint32_t>(error)));
-#endif
+        LOG_ERROR("OpenGL: {} set error {}.", name, error);
     }
 }
 
@@ -187,26 +192,28 @@ static void debug_output_callback(GLenum source, GLenum type, GLuint id, GLenum 
     LOG_DEBUG("[OPENGL - {} - {}] {}", type_str, severity_fmt, message);
 }
 
-bool create(SDL_Window *window, std::unique_ptr<State> &state) {
+bool create(SDL_Window *window, std::unique_ptr<State> &state, const char *base_path, const bool hashless_texture_cache) {
     auto &gl_state = dynamic_cast<GLState &>(*state);
 
     // Recursively create GL version until one accepts
     // Major 4 is mandantory
+    // We use glBufferStorage which needs OpenGL 4.4
     const int accept_gl_version[] = {
+        6, // OpenGL 4.6
         5, // OpenGL 4.5
-        3, // OpenGL 4.3
-        2, // OpenGL 4.2
-        1 // OpenGL 4.1
+        4, // OpenGL 4.4
     };
 
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+#ifndef NDEBUG
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_DEBUG_FLAG);
+#endif
 
     int choosen_minor_version = 0;
 
     for (int i = 0; i < sizeof(accept_gl_version) / sizeof(int); i++) {
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, accept_gl_version[i]);
-
         gl_state.context = GLContextPtr(SDL_GL_CreateContext(window), SDL_GL_DeleteContext);
         if (gl_state.context) {
             choosen_minor_version = accept_gl_version[i];
@@ -216,12 +223,6 @@ bool create(SDL_Window *window, std::unique_ptr<State> &state) {
 
     if (!gl_state.context)
         return false;
-
-    // Try adaptive vsync first, falling back to regular vsync.
-    if (SDL_GL_SetSwapInterval(-1) < 0) {
-        SDL_GL_SetSwapInterval(1);
-    }
-    LOG_INFO("Swap interval = {}", SDL_GL_GetSwapInterval());
 
     gladLoadGLLoader((GLADloadproc)SDL_GL_GetProcAddress);
 #if MICROPROFILE_ENABLED != 0
@@ -237,9 +238,11 @@ bool create(SDL_Window *window, std::unique_ptr<State> &state) {
     LOG_INFO("GL_VERSION = {}", glGetString(GL_VERSION));
     LOG_INFO("GL_SHADING_LANGUAGE_VERSION = {}", version);
 
+#ifndef NDEBUG
     if (choosen_minor_version >= 3) {
         glDebugMessageCallback(reinterpret_cast<GLDEBUGPROC>(debug_output_callback), nullptr);
     }
+#endif
 
     int total_extensions = 0;
     glGetIntegerv(GL_NUM_EXTENSIONS, &total_extensions);
@@ -248,7 +251,9 @@ bool create(SDL_Window *window, std::unique_ptr<State> &state) {
         { "GL_ARB_fragment_shader_interlock", &gl_state.features.support_shader_interlock },
         { "GL_ARB_texture_barrier", &gl_state.features.support_texture_barrier },
         { "GL_EXT_shader_framebuffer_fetch", &gl_state.features.direct_fragcolor },
-        { "GL_ARB_gl_spirv", &gl_state.features.spirv_shader }
+        { "GL_ARB_gl_spirv", &gl_state.features.spirv_shader },
+        { "GL_ARB_get_texture_sub_image", &gl_state.features.support_get_texture_sub_image },
+        { "GL_EXT_shader_image_load_formatted", &gl_state.features.support_unknown_format }
     };
 
     for (int i = 0; i < total_extensions; i++) {
@@ -267,42 +272,51 @@ bool create(SDL_Window *window, std::unique_ptr<State> &state) {
         LOG_INFO("Your GPU supports shader interlock, some games that use programmable blending will have better performance.");
     } else if (gl_state.features.support_texture_barrier) {
         LOG_INFO("Your GPU only supports texture barrier, performance may not be good on programmable blending games.");
-        LOG_WARN("Consider updating to GPU that has shader interlock.");
+        LOG_WARN("Consider upgrading to a GPU that has shader interlock.");
     } else {
         LOG_INFO("Your GPU doesn't support extensions that make programmable blending possible. Some games may have broken graphics.");
         LOG_WARN("Consider updating your graphics drivers or upgrading your GPU.");
     }
 
+    // always enabled in the opengl renderer
+    gl_state.features.use_mask_bit = true;
+
+    return gl_state.init(base_path, hashless_texture_cache);
+}
+
+bool GLState::init(const char *base_path, const bool hashless_texture_cache) {
+    texture_cache.backend = &current_backend;
+    if (!texture::init(texture_cache, hashless_texture_cache)) {
+        LOG_ERROR("Failed to initialize texture cache!");
+        return false;
+    }
+
+    if (!screen_renderer.init(base_path)) {
+        LOG_ERROR("Failed to initialize screen renderer");
+        return false;
+    }
+
+    shader_version = fmt::format("v{}", shader::CURRENT_VERSION);
+
     return true;
 }
 
-bool create(std::unique_ptr<Context> &context, const bool hashless_texture_cache) {
+bool create(std::unique_ptr<Context> &context) {
     R_PROFILE(__func__);
 
     context = std::make_unique<GLContext>();
     GLContext *gl_context = reinterpret_cast<GLContext *>(context.get());
 
-    const bool init_result = !(!texture::init(gl_context->texture_cache, hashless_texture_cache) || !gl_context->vertex_array.init(reinterpret_cast<renderer::Generator *>(glGenVertexArrays), reinterpret_cast<renderer::Deleter *>(glDeleteVertexArrays)) || !gl_context->element_buffer.init(reinterpret_cast<renderer::Generator *>(glGenBuffers), reinterpret_cast<renderer::Deleter *>(glDeleteBuffers)) || !gl_context->stream_vertex_buffers.init(reinterpret_cast<renderer::Generator *>(glGenBuffers), reinterpret_cast<renderer::Deleter *>(glDeleteBuffers))
-        || !gl_context->uniform_buffer.init(reinterpret_cast<renderer::Generator *>(glGenBuffers), reinterpret_cast<renderer::Deleter *>(glDeleteBuffers))
-        || !gl_context->ssbo.init(reinterpret_cast<renderer::Generator *>(glGenBuffers), reinterpret_cast<renderer::Deleter *>(glDeleteBuffers)));
+    const bool init_result = gl_context->vertex_array.init(reinterpret_cast<renderer::Generator *>(glGenVertexArrays), reinterpret_cast<renderer::Deleter *>(glDeleteVertexArrays));
 
     if (!init_result) {
         return false;
     }
 
-    // Maxing SSBO sizes, we merge all buffers together so there's no way to reallocate safely without losing data, and the size here
-    // is acceptable (1024 * sizeof(vec4) * uniformBufferMaxCount). The maximum is 245.76 KB, GPU can hold it.
-    static constexpr std::size_t MAX_SSBO_BYTE_COUNT = 1024 * 16 * (SCE_GXM_MAX_UNIFORM_BUFFERS + 1);
-
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, gl_context->ssbo[0]);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, MAX_SSBO_BYTE_COUNT, nullptr, GL_DYNAMIC_COPY);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, gl_context->ssbo[1]);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, MAX_SSBO_BYTE_COUNT, nullptr, GL_DYNAMIC_COPY);
-
     return true;
 }
 
-bool create(std::unique_ptr<RenderTarget> &rt, const SceGxmRenderTargetParams &params, const FeatureState &features) {
+bool create(GLState &state, std::unique_ptr<RenderTarget> &rt, const SceGxmRenderTargetParams &params, const FeatureState &features) {
     R_PROFILE(__func__);
 
     rt = std::make_unique<GLRenderTarget>();
@@ -312,22 +326,24 @@ bool create(std::unique_ptr<RenderTarget> &rt, const SceGxmRenderTargetParams &p
         return false;
     }
 
-    render_target->width = params.width;
-    render_target->height = params.height;
+    render_target->width = params.width * state.res_multiplier;
+    render_target->height = params.height * state.res_multiplier;
 
     render_target->attachments.init(reinterpret_cast<renderer::Generator *>(glGenTextures), reinterpret_cast<renderer::Deleter *>(glDeleteTextures));
 
     glBindTexture(GL_TEXTURE_2D, render_target->attachments[0]);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, params.width, params.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, render_target->width, render_target->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
     glBindTexture(GL_TEXTURE_2D, render_target->attachments[1]);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH24_STENCIL8, params.width, params.height, 0, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8, nullptr);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH24_STENCIL8, render_target->width, render_target->height, 0, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8, nullptr);
 
     render_target->masktexture.init(reinterpret_cast<renderer::Generator *>(glGenTextures), reinterpret_cast<renderer::Deleter *>(glDeleteTextures));
     glBindTexture(GL_TEXTURE_2D, render_target->masktexture[0]);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, params.width, params.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    // we need to make the masktexture format immutable, otherwise image load operations
+    // won't work on mesa drivers
+    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, params.width, params.height);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glBindFramebuffer(GL_FRAMEBUFFER, render_target->maskbuffer[0]);
@@ -339,31 +355,11 @@ bool create(std::unique_ptr<RenderTarget> &rt, const SceGxmRenderTargetParams &p
     return true;
 }
 
-static void layout_ssbo_offset_from_uniform_buffer_sizes(UniformBufferSizes &sizes, UniformBufferSizes &offsets) {
-    std::uint32_t last_offset = 0;
-
-    for (std::size_t i = 0; i < sizes.size(); i++) {
-        if (sizes[i] != 0) {
-            // Round to vec4 unit
-            offsets[i] = last_offset;
-            last_offset += ((sizes[i] + 3) / 4 * 4);
-        } else {
-            offsets[i] = static_cast<std::uint32_t>(-1);
-        }
-    }
-}
-
-bool create(std::unique_ptr<FragmentProgram> &fp, GLState &state, const SceGxmProgram &program, const SceGxmBlendInfo *blend, GXPPtrMap &gxp_ptr_map, const char *base_path, const char *title_id) {
+bool create(std::unique_ptr<FragmentProgram> &fp, GLState &state, const SceGxmProgram &program, const SceGxmBlendInfo *blend) {
     R_PROFILE(__func__);
 
     fp = std::make_unique<GLFragmentProgram>();
     GLFragmentProgram *frag_program_gl = reinterpret_cast<GLFragmentProgram *>(fp.get());
-
-    // Try to hash this shader
-    const Sha256Hash hash_bytes_f = sha256(&program, program.size);
-    fp->hash.assign(hash_bytes_f.begin(), hash_bytes_f.end());
-
-    gxp_ptr_map.emplace(hash_bytes_f, &program);
 
     // Translate blending.
     if (blend != nullptr) {
@@ -379,37 +375,18 @@ bool create(std::unique_ptr<FragmentProgram> &fp, GLState &state, const SceGxmPr
         frag_program_gl->alpha_src = translate_blend_factor(blend->alphaSrc);
         frag_program_gl->alpha_dst = translate_blend_factor(blend->alphaDst);
     }
-    shader::usse::get_uniform_buffer_sizes(program, fp->uniform_buffer_sizes);
-    layout_ssbo_offset_from_uniform_buffer_sizes(fp->uniform_buffer_sizes, fp->uniform_buffer_data_offsets);
 
     return true;
 }
 
-bool create(std::unique_ptr<VertexProgram> &vp, GLState &state, const SceGxmProgram &program, GXPPtrMap &gxp_ptr_map, const char *base_path, const char *title_id) {
+bool create(std::unique_ptr<VertexProgram> &vp, GLState &state, const SceGxmProgram &program) {
     R_PROFILE(__func__);
-
     vp = std::make_unique<GLVertexProgram>();
-    GLVertexProgram *vert_program_gl = reinterpret_cast<GLVertexProgram *>(vp.get());
-
-    // Try to hash this shader
-    const Sha256Hash hash_bytes_v = sha256(&program, program.size);
-    vp->hash.assign(hash_bytes_v.begin(), hash_bytes_v.end());
-    gxp_ptr_map.emplace(hash_bytes_v, &program);
-
-    shader::usse::get_uniform_buffer_sizes(program, vp->uniform_buffer_sizes);
-    shader::usse::get_attribute_informations(program, vert_program_gl->attribute_infos);
-    layout_ssbo_offset_from_uniform_buffer_sizes(vp->uniform_buffer_sizes, vp->uniform_buffer_data_offsets);
-
-    if (vert_program_gl->attribute_infos.empty()) {
-        vert_program_gl->stripped_symbols_checked = false;
-    } else {
-        vert_program_gl->stripped_symbols_checked = true;
-    }
 
     return true;
 }
 
-void set_context(GLContext &context, const MemState &mem, const GLRenderTarget *rt, const FeatureState &features) {
+void set_context(GLState &state, GLContext &context, const MemState &mem, const GLRenderTarget *rt, const FeatureState &features) {
     R_PROFILE(__func__);
 
     bind_fundamental(context);
@@ -420,7 +397,7 @@ void set_context(GLContext &context, const MemState &mem, const GLRenderTarget *
         context.render_target = reinterpret_cast<const GLRenderTarget *>(context.current_render_target);
     }
 
-    context.surface_cache.set_render_target(context.render_target);
+    state.surface_cache.set_render_target(context.render_target);
 
     SceGxmColorSurface *color_surface_fin = &context.record.color_surface;
     if (color_surface_fin->data.address() == 0) {
@@ -432,12 +409,12 @@ void set_context(GLContext &context, const MemState &mem, const GLRenderTarget *
         ds_surface_fin = nullptr;
     }
 
-    std::uint64_t current_color_attachment_handle = 0;
+    GLuint current_color_attachment_handle = 0;
     std::uint16_t current_framebuffer_height = 0;
 
-    context.current_framebuffer = static_cast<GLuint>(context.surface_cache.retrieve_framebuffer_handle(
-        color_surface_fin, ds_surface_fin, &current_color_attachment_handle, nullptr, &current_framebuffer_height));
-    context.current_color_attachment = static_cast<GLuint>(current_color_attachment_handle);
+    context.current_framebuffer = state.surface_cache.retrieve_framebuffer_handle(
+        state, mem, color_surface_fin, ds_surface_fin, &current_color_attachment_handle, nullptr, &current_framebuffer_height);
+    context.current_color_attachment = current_color_attachment_handle;
     context.current_framebuffer_height = current_framebuffer_height;
 
     glBindFramebuffer(GL_FRAMEBUFFER, context.current_framebuffer);
@@ -446,121 +423,120 @@ void set_context(GLContext &context, const MemState &mem, const GLRenderTarget *
         glDisable(GL_SCISSOR_TEST);
     }
 
-    glEnable(GL_DEPTH_TEST);
-    glDepthMask(GL_TRUE);
-    glClearDepth(context.record.depth_stencil_surface.backgroundDepth);
-    glClear(GL_DEPTH_BUFFER_BIT);
-    glDisable(GL_DEPTH_TEST);
+    sync_mask(state, context, mem);
 
-    sync_mask(context, mem);
     // TODO: Take request to force load from given memory
+    // Sync depth/stencil based on depth stencil surface.
+    sync_depth_data(context.record);
+    sync_depth_func(context.record.front_depth_func, true);
+    sync_depth_func(context.record.back_depth_func, false);
+    sync_depth_write_enable(context.record.front_depth_write_mode, true);
+    sync_depth_write_enable(context.record.back_depth_write_mode, false);
 
-    // Sync enable/disable depth/stencil based on depth stencil surface.
-    if (sync_depth_data(context.record)) {
-        sync_depth_func(context.record.front_depth_func, true);
-        sync_depth_func(context.record.back_depth_func, false);
-        sync_depth_write_enable(context.record.front_depth_write_mode, true);
-        sync_depth_write_enable(context.record.back_depth_write_mode, false);
-    }
-
-    if (sync_stencil_data(context.record, mem)) {
-        sync_stencil_func(context.record.back_stencil_state, mem, true);
-        sync_stencil_func(context.record.front_stencil_state, mem, false);
-    }
+    sync_stencil_data(context.record, mem);
+    sync_stencil_func(context.record.back_stencil_state_op, context.record.back_stencil_state_values, mem, true);
+    sync_stencil_func(context.record.front_stencil_state_op, context.record.front_stencil_state_values, mem, false);
 
     if (context.record.region_clip_mode != SCE_GXM_REGION_CLIP_NONE) {
         glEnable(GL_SCISSOR_TEST);
     }
 }
 
-void get_surface_data(GLContext &context, size_t width, size_t height, size_t stride_in_pixels, uint32_t *pixels, SceGxmColorFormat format) {
-    R_PROFILE(__func__);
+static std::map<SceGxmColorFormat, std::pair<GLenum, GLenum>> GXM_COLOR_FORMAT_TO_GL_FORMAT = {
+    { SCE_GXM_COLOR_FORMAT_U8U8U8U8_ABGR, { GL_RGBA, GL_UNSIGNED_INT_8_8_8_8_REV } },
+    { SCE_GXM_COLOR_FORMAT_U8U8U8U8_ARGB, { GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV } },
+    { SCE_GXM_COLOR_FORMAT_U8U8U8U8_RGBA, { GL_RGBA, GL_UNSIGNED_BYTE } },
+    { SCE_GXM_COLOR_FORMAT_U4U4U4U4_ARGB, { GL_BGRA, GL_UNSIGNED_SHORT_4_4_4_4_REV } },
+    { SCE_GXM_COLOR_FORMAT_U8U8U8_BGR, { GL_RGB, GL_UNSIGNED_BYTE } },
+    { SCE_GXM_COLOR_FORMAT_U5U6U5_RGB, { GL_RGB, GL_UNSIGNED_SHORT_5_6_5 } },
+    { SCE_GXM_COLOR_FORMAT_U8U8_AR, { GL_RG, GL_UNSIGNED_BYTE } },
+    { SCE_GXM_COLOR_FORMAT_U8_A, { GL_ALPHA, GL_UNSIGNED_BYTE } },
+    { SCE_GXM_COLOR_FORMAT_U8_R, { GL_RED, GL_UNSIGNED_BYTE } },
+    { SCE_GXM_COLOR_FORMAT_U2F10F10F10_ABGR, { GL_RGBA, GL_UNSIGNED_INT_2_10_10_10_REV } },
+    { SCE_GXM_COLOR_FORMAT_U2U10U10U10_ABGR, { GL_RGBA, GL_UNSIGNED_INT_2_10_10_10_REV } },
+    { SCE_GXM_COLOR_FORMAT_U10U10U10U2_RGBA, { GL_BGRA, GL_UNSIGNED_INT_10_10_10_2 } },
+    { SCE_GXM_COLOR_FORMAT_U10U10U10U2_BGRA, { GL_RGBA, GL_UNSIGNED_INT_10_10_10_2 } },
+    { SCE_GXM_COLOR_FORMAT_F16_R, { GL_RED, GL_HALF_FLOAT } },
+    { SCE_GXM_COLOR_FORMAT_F16F16_GR, { GL_RG, GL_HALF_FLOAT } },
+    { SCE_GXM_COLOR_FORMAT_F16F16F16F16_ABGR, { GL_RGBA, GL_UNSIGNED_SHORT } },
+    { SCE_GXM_COLOR_FORMAT_F16F16F16F16_ARGB, { GL_BGRA, GL_UNSIGNED_SHORT } },
+    { SCE_GXM_COLOR_FORMAT_F32_R, { GL_RED, GL_FLOAT } },
+    { SCE_GXM_COLOR_FORMAT_F32F32_GR, { GL_RG, GL_FLOAT } },
+    { SCE_GXM_COLOR_FORMAT_F11F11F10_RGB, { GL_RGB, GL_UNSIGNED_INT_10F_11F_11F_REV } },
+    { SCE_GXM_COLOR_FORMAT_SE5M9M9M9_BGR, { GL_RGB, GL_HALF_FLOAT } },
+    { SCE_GXM_COLOR_FORMAT_SE5M9M9M9_RGB, { GL_BGR, GL_HALF_FLOAT } }
+};
 
-    if (pixels == nullptr) {
-        return;
+static bool format_need_temp_storage(const GLState &state, SceGxmColorSurface &surface, std::vector<std::uint8_t> &storage, const std::uint32_t width, const std::uint32_t height) {
+    size_t needed_pixels;
+    if (state.res_multiplier == 1) {
+        needed_pixels = surface.strideInPixels * height;
+    } else {
+        // width and height is already upscaled
+        needed_pixels = width * height;
     }
 
-    glPixelStorei(GL_PACK_ROW_LENGTH, static_cast<GLint>(stride_in_pixels));
+    if ((surface.colorFormat == SCE_GXM_COLOR_FORMAT_SE5M9M9M9_BGR) || (surface.colorFormat == SCE_GXM_COLOR_FORMAT_SE5M9M9M9_RGB)) {
+        storage.resize(needed_pixels * 3 * 2); // RGB and half float
+        return true;
+    }
 
-    // TODO Need more check into this
-    switch (format) {
-    case SCE_GXM_COLOR_FORMAT_U8U8U8U8_ABGR:
-        glReadPixels(0, 0, static_cast<GLsizei>(width), static_cast<GLsizei>(height), GL_RGBA, GL_UNSIGNED_INT_8_8_8_8_REV, pixels);
-        break;
-    case SCE_GXM_COLOR_FORMAT_U8U8U8U8_ARGB:
-        glReadPixels(0, 0, static_cast<GLsizei>(width), static_cast<GLsizei>(height), GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, pixels);
-        break;
-    case SCE_GXM_COLOR_FORMAT_U8U8U8U8_RGBA:
-        glReadPixels(0, 0, static_cast<GLsizei>(width), static_cast<GLsizei>(height), GL_RGBA, GL_UNSIGNED_BYTE, pixels);
-        for (int i = 0; i < width * height; ++i) {
-            uint8_t *pixel = reinterpret_cast<uint8_t *>(&pixels[i]);
-            std::swap(pixel[0], pixel[3]);
-            std::swap(pixel[1], pixel[2]);
+    if (state.res_multiplier > 1) {
+        storage.resize(needed_pixels * gxm::bits_per_pixel(gxm::get_base_format(surface.colorFormat)) >> 3);
+        return true;
+    }
+
+    return false;
+}
+
+static void post_process_pixels_data(GLState &renderer, std::uint32_t *pixels, std::uint8_t *source, std::uint32_t width, std::uint32_t height, const std::uint32_t stride,
+    SceGxmColorSurface &surface) {
+    uint8_t *curr_input = reinterpret_cast<uint8_t *>(source);
+    uint8_t *curr_output = reinterpret_cast<uint8_t *>(pixels);
+
+    const bool is_U8U8U8_RGBA = surface.colorFormat == SCE_GXM_COLOR_FORMAT_U8U8U8U8_RGBA;
+    const bool is_SE5M9M9M9 = (surface.colorFormat == SCE_GXM_COLOR_FORMAT_SE5M9M9M9_RGB) || (surface.colorFormat == SCE_GXM_COLOR_FORMAT_SE5M9M9M9_BGR);
+
+    const int multiplier = renderer.res_multiplier;
+    if (multiplier > 1 || is_U8U8U8_RGBA || is_SE5M9M9M9) {
+        // TODO: do this on the GPU instead (using texture blitting?)
+        const int bytes_per_output_pixel = (gxm::bits_per_pixel(gxm::get_base_format(surface.colorFormat)) + 7) >> 3;
+        const int bytes_per_input_pixel = is_SE5M9M9M9 ? 6 : bytes_per_output_pixel;
+
+        const uint32_t end_stride_bytes = bytes_per_output_pixel * (surface.strideInPixels - surface.width);
+        for (uint32_t row = 0; row < surface.height; row++) {
+            for (uint32_t col = 0; col < surface.width; col++) {
+                if (!is_SE5M9M9M9) {
+                    memcpy(curr_output, curr_input, bytes_per_input_pixel);
+
+                    if (is_U8U8U8_RGBA) {
+                        std::swap(curr_input[0], curr_input[3]);
+                        std::swap(curr_input[1], curr_input[2]);
+                    }
+                } else {
+                    const uint16_t *temp_bytes = reinterpret_cast<uint16_t *>(curr_input);
+                    uint32_t pixel = 0;
+                    pixel |= (uint32_t(temp_bytes[0] << 17) & (0x3FFFF << 18)); // Exp + 9 bits
+                    pixel |= (uint32_t(temp_bytes[1] << 8) & (0x1FF << 9));
+                    pixel |= (uint32_t(temp_bytes[2] >> 1) & (0x1FF << 0));
+                    *reinterpret_cast<uint32_t *>(curr_output) = pixel;
+                }
+
+                curr_output += bytes_per_output_pixel;
+                curr_input += bytes_per_input_pixel * multiplier;
+            }
+            // take the pixel stride into account
+            curr_output += end_stride_bytes;
+            curr_input += (multiplier - 1) * width * bytes_per_input_pixel;
         }
-        break;
-    case SCE_GXM_COLOR_FORMAT_U4U4U4U4_ARGB:
-        glReadPixels(0, 0, static_cast<GLsizei>(width), static_cast<GLsizei>(height), GL_BGRA, GL_UNSIGNED_SHORT_4_4_4_4_REV, pixels);
-        break;
-    case SCE_GXM_COLOR_FORMAT_U8U8U8_BGR:
-        glReadPixels(0, 0, static_cast<GLsizei>(width), static_cast<GLsizei>(height), GL_RGB, GL_UNSIGNED_BYTE, pixels);
-        break;
-    case SCE_GXM_COLOR_FORMAT_U5U6U5_RGB:
-        glReadPixels(0, 0, static_cast<GLsizei>(width), static_cast<GLsizei>(height), GL_RGB, GL_UNSIGNED_SHORT_5_6_5, pixels);
-        break;
-    case SCE_GXM_COLOR_FORMAT_U16_R:
-        glReadPixels(0, 0, static_cast<GLsizei>(width), static_cast<GLsizei>(height), GL_RED, GL_UNSIGNED_SHORT, pixels);
-        break;
-    case SCE_GXM_COLOR_FORMAT_U8U8_AR:
-        glReadPixels(0, 0, static_cast<GLsizei>(width), static_cast<GLsizei>(height), GL_RG, GL_UNSIGNED_BYTE, pixels);
-        break;
-    case SCE_GXM_COLOR_FORMAT_U8_A:
-        glReadPixels(0, 0, static_cast<GLsizei>(width), static_cast<GLsizei>(height), GL_ALPHA, GL_UNSIGNED_BYTE, pixels);
-        break;
-    case SCE_GXM_COLOR_FORMAT_U8_R:
-        glReadPixels(0, 0, static_cast<GLsizei>(width), static_cast<GLsizei>(height), GL_RED, GL_UNSIGNED_BYTE, pixels);
-        break;
-    case SCE_GXM_COLOR_FORMAT_U2F10F10F10_ABGR:
-    case SCE_GXM_COLOR_FORMAT_U2U10U10U10_ABGR:
-        glReadPixels(0, 0, static_cast<GLsizei>(width), static_cast<GLsizei>(height), GL_RGBA, GL_UNSIGNED_INT_2_10_10_10_REV, pixels);
-        break;
-    case SCE_GXM_COLOR_FORMAT_F16_R:
-        glReadPixels(0, 0, static_cast<GLsizei>(width), static_cast<GLsizei>(height), GL_RED, GL_HALF_FLOAT, pixels);
-        break;
-    case SCE_GXM_COLOR_FORMAT_F16F16_GR:
-        glReadPixels(0, 0, static_cast<GLsizei>(width), static_cast<GLsizei>(height), GL_RG, GL_HALF_FLOAT, pixels);
-        break;
-    case SCE_GXM_COLOR_FORMAT_F16F16F16F16_ABGR:
-        glReadPixels(0, 0, static_cast<GLsizei>(width), static_cast<GLsizei>(height), GL_RGBA, GL_HALF_FLOAT, pixels);
-        break;
-    case SCE_GXM_COLOR_FORMAT_F16F16F16F16_ARGB:
-        glReadPixels(0, 0, static_cast<GLsizei>(width), static_cast<GLsizei>(height), GL_BGRA, GL_HALF_FLOAT, pixels);
-        break;
-    case SCE_GXM_COLOR_FORMAT_F32F32_GR:
-        glReadPixels(0, 0, static_cast<GLsizei>(width), static_cast<GLsizei>(height), GL_RG, GL_FLOAT, pixels);
-        break;
-    case SCE_GXM_COLOR_FORMAT_SE5M9M9M9_RGB:
-    case SCE_GXM_COLOR_FORMAT_SE5M9M9M9_BGR: {
-        std::vector<uint16_t> temp_bytes(width * height * 3);
-        GLenum rfmt = (format == SCE_GXM_COLOR_FORMAT_SE5M9M9M9_BGR) ? GL_BGR : GL_RGB;
-        glReadPixels(0, 0, static_cast<GLsizei>(width), static_cast<GLsizei>(height), rfmt, GL_HALF_FLOAT, temp_bytes.data());
-        for (int i = 0, iptr = 0; i < width * height; ++i) {
-            uint32_t pixel = 0;
-            pixel |= (uint32_t(temp_bytes[iptr++] << 17) & (0x3FFFF << 18)); // Exp + 9 bits
-            pixel |= (uint32_t(temp_bytes[iptr++] << 8) & (0x1FF << 9));
-            pixel |= (uint32_t(temp_bytes[iptr++] >> 1) & (0x1FF << 0));
-            pixels[i] = pixel;
-        }
-        break;
-    }
-    default:
-        LOG_ERROR("Color format not implemented: {}, report this to developer", format);
-        glReadPixels(0, 0, static_cast<GLsizei>(width), static_cast<GLsizei>(height), GL_RGBA, GL_UNSIGNED_BYTE, pixels);
-        break;
+
+        width /= multiplier;
+        height /= multiplier;
     }
 
-    if (context.record.color_surface.surfaceType == SCE_GXM_COLOR_SURFACE_TILED) {
-        const SceGxmColorBaseFormat base_format = gxm::get_base_format(format);
-        const size_t bpp = renderer::color::bits_per_pixel(base_format);
+    if (surface.surfaceType == SCE_GXM_COLOR_SURFACE_TILED) {
+        const SceGxmColorBaseFormat base_format = gxm::get_base_format(surface.colorFormat);
+        const size_t bpp = gxm::bits_per_pixel(base_format);
         const size_t bytes_per_pixel = (bpp + 7) >> 3;
         std::vector<uint8_t> buffer;
 
@@ -569,7 +545,7 @@ void get_surface_data(GLContext &context, size_t width, size_t height, size_t st
             for (int hori_tile = 0; hori_tile < (width >> 5); hori_tile++) {
                 const size_t tile_position = hori_tile + (j >> 5) * ((width + 31) >> 5);
                 const size_t first_pixel_offset_in_tile = (tile_position << 10) + (j & 31) * 32;
-                const size_t first_pixel_offset_in_linear = (j * stride_in_pixels) + hori_tile * 32;
+                const size_t first_pixel_offset_in_linear = (j * stride) + hori_tile * 32;
 
                 memcpy(buffer.data() + first_pixel_offset_in_tile * bytes_per_pixel,
                     (const char *)(pixels) + first_pixel_offset_in_linear * bytes_per_pixel, 32 * bytes_per_pixel);
@@ -577,20 +553,224 @@ void get_surface_data(GLContext &context, size_t width, size_t height, size_t st
         }
         memcpy(pixels, buffer.data(), buffer.size());
     }
+}
+
+void lookup_and_get_surface_data(GLState &renderer, MemState &mem, SceGxmColorSurface &surface) {
+    std::uint32_t swizzle = 0;
+
+    GLint tex_handle = static_cast<GLint>(renderer.surface_cache.retrieve_color_surface_texture_handle(renderer, static_cast<std::uint16_t>(surface.width),
+        static_cast<std::uint16_t>(surface.height), static_cast<std::uint16_t>(surface.strideInPixels),
+        gxm::get_base_format(surface.colorFormat), surface.data, renderer::SurfaceTextureRetrievePurpose::READING, swizzle));
+
+    if (tex_handle == 0) {
+        return;
+    }
+
+    SceGxmColorFormat format = surface.colorFormat;
+    uint32_t width = surface.width;
+    uint32_t height = surface.height;
+    size_t buffer_size;
+
+    if (renderer.res_multiplier == 1) {
+        glPixelStorei(GL_PACK_ROW_LENGTH, static_cast<GLint>(surface.strideInPixels));
+        buffer_size = gxm::get_stride_in_bytes(surface.colorFormat, surface.strideInPixels) * height;
+    } else {
+        width *= renderer.res_multiplier;
+        height *= renderer.res_multiplier;
+        glPixelStorei(GL_PACK_ROW_LENGTH, static_cast<GLint>(width));
+        buffer_size = gxm::get_stride_in_bytes(surface.colorFormat, width) * height;
+    }
+
+    auto format_gl = GXM_COLOR_FORMAT_TO_GL_FORMAT.find(format);
+    if (format_gl == GXM_COLOR_FORMAT_TO_GL_FORMAT.end()) {
+        LOG_ERROR("Color format not implemented: {}, report this to developer", format);
+        return;
+    }
+
+    std::uint32_t *pixels = surface.data.cast<std::uint32_t>().get(mem);
+    std::uint8_t *temp_store = reinterpret_cast<std::uint8_t *>(pixels);
+    if (!pixels) {
+        return;
+    }
+
+    std::vector<std::uint8_t> storage_v;
+    if (format_need_temp_storage(renderer, surface, storage_v, width, height)) {
+        temp_store = storage_v.data();
+        buffer_size = storage_v.size();
+    }
+
+    const SceGxmColorBaseFormat base_format = gxm::get_base_format(format);
+
+    GLenum gl_format = format_gl->second.first;
+    GLenum gl_type = format_gl->second.second;
+    if (renderer.features.preserve_f16_nan_as_u16 && color::is_write_surface_stored_rawly(base_format)) {
+        gl_format = color::get_raw_store_upload_format_type(base_format);
+        gl_type = color::get_raw_store_upload_data_type(base_format);
+    }
+
+    if (renderer.features.support_get_texture_sub_image) {
+        glGetTextureSubImage(tex_handle, 0, 0, 0, 0, width, height, 1, gl_format, gl_type, buffer_size, temp_store);
+    } else {
+        GLint last_texture = 0;
+
+        glGetIntegerv(GL_TEXTURE_BINDING_2D, &last_texture);
+        glBindTexture(GL_TEXTURE_2D, tex_handle);
+        glGetTexImage(GL_TEXTURE_2D, 0, gl_format, gl_type, temp_store);
+        glBindTexture(GL_TEXTURE_2D, last_texture);
+    }
+
+    post_process_pixels_data(renderer, pixels, temp_store, width, height, surface.strideInPixels, surface);
+    glPixelStorei(GL_PACK_ROW_LENGTH, 0);
+}
+
+void get_surface_data(GLState &renderer, GLContext &context, uint32_t *pixels, SceGxmColorSurface &surface) {
+    R_PROFILE(__func__);
+
+    if (pixels == nullptr) {
+        return;
+    }
+
+    SceGxmColorFormat format = surface.colorFormat;
+    uint32_t width = surface.width;
+    uint32_t height = surface.height;
+    size_t buffer_size;
+
+    if (renderer.res_multiplier == 1) {
+        glPixelStorei(GL_PACK_ROW_LENGTH, static_cast<GLint>(surface.strideInPixels));
+        buffer_size = gxm::get_stride_in_bytes(surface.colorFormat, surface.strideInPixels) * height;
+    } else {
+        width *= renderer.res_multiplier;
+        height *= renderer.res_multiplier;
+        glPixelStorei(GL_PACK_ROW_LENGTH, static_cast<GLint>(width));
+        buffer_size = gxm::get_stride_in_bytes(surface.colorFormat, width) * height;
+    }
+
+    auto format_gl = GXM_COLOR_FORMAT_TO_GL_FORMAT.find(format);
+    if (format_gl == GXM_COLOR_FORMAT_TO_GL_FORMAT.end()) {
+        LOG_ERROR("Color format not implemented: {}, report this to developer", format);
+        return;
+    }
+
+    std::uint8_t *temp_store = reinterpret_cast<std::uint8_t *>(pixels);
+    std::vector<std::uint8_t> storage_v;
+
+    if (format_need_temp_storage(renderer, surface, storage_v, width, height)) {
+        temp_store = storage_v.data();
+    }
+
+    const SceGxmColorBaseFormat base_format = gxm::get_base_format(format);
+    if (renderer.features.preserve_f16_nan_as_u16 && color::is_write_surface_stored_rawly(base_format)) {
+        // we can't get the content of raw textures with glReadPixels
+        GLint last_texture = 0;
+
+        glGetIntegerv(GL_TEXTURE_BINDING_2D, &last_texture);
+        glBindTexture(GL_TEXTURE_2D, context.current_color_attachment);
+        glGetTexImage(GL_TEXTURE_2D, 0, color::get_raw_store_upload_format_type(base_format), color::get_raw_store_upload_data_type(base_format), temp_store);
+        glBindTexture(GL_TEXTURE_2D, last_texture);
+    } else {
+        glReadPixels(0, 0, static_cast<GLsizei>(width), static_cast<GLsizei>(height), format_gl->second.first, format_gl->second.second, temp_store);
+    }
+    post_process_pixels_data(renderer, pixels, temp_store, width, height, surface.strideInPixels, surface);
 
     glPixelStorei(GL_PACK_ROW_LENGTH, 0);
-    ++context.texture_cache.timestamp;
+    ++renderer.texture_cache.timestamp;
 }
 
-void upload_vertex_stream(GLContext &context, const std::size_t stream_index, const std::size_t length, const void *data) {
-    glBindBuffer(GL_ARRAY_BUFFER, context.stream_vertex_buffers[stream_index]);
+void GLState::render_frame(const SceFVector2 &viewport_pos, const SceFVector2 &viewport_size, const DisplayState &display,
+    const GxmState &gxm, MemState &mem) {
+    if (!display.frame.base)
+        return;
 
-    // Orphan the buffer, so we don't have to stall the pipeline, wait for last draw call to finish
-    // See OpenGL Insight at 28.3.2. Intel driver likes glBufferData more, so use glBufferData.
-    glBufferData(GL_ARRAY_BUFFER, length, nullptr, GL_DYNAMIC_DRAW);
-    glBufferData(GL_ARRAY_BUFFER, length, data, GL_DYNAMIC_DRAW);
+    // Check if the surface exists
+    float uvs[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+    bool need_uv = true;
 
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    const std::size_t texture_data_size = (std::size_t)display.frame.pitch * (std::size_t)display.frame.image_size.y * (std::size_t)4;
+
+    std::uint64_t surface_handle = 0;
+    bool check_for_cache = true;
+
+    for (std::size_t i = 0; i < gxm.surface_syncing_infoes.size(); i++) {
+        if (gxm.surface_syncing_infoes[i].addr == 0) {
+            continue;
+        }
+        if ((gxm.surface_syncing_infoes[i].addr <= display.frame.base.address()) && (gxm.surface_syncing_infoes[i].addr + texture_data_size > display.frame.base.address())) {
+            if (!gxm.surface_syncing_infoes[i].syncing_disabled()) {
+                check_for_cache = false;
+            }
+        }
+    }
+
+    SceFVector2 texture_size;
+
+    if (check_for_cache)
+        surface_handle = surface_cache.sourcing_color_surface_for_presentation(
+            display.frame.base, display.frame.image_size.x, display.frame.image_size.y, display.frame.pitch, uvs, this->res_multiplier, texture_size);
+
+    GLint last_texture = 0;
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &last_texture);
+
+    if (!surface_handle) {
+        // Fallback to a manual upload (likely a black !!!)
+        need_uv = false;
+        glBindTexture(GL_TEXTURE_2D, screen_renderer.get_resident_texture());
+
+        // Maybe a victim of surface locking (early from client GXM) when no frame yet renders!
+        const auto pixels = display.frame.base.cast<void>().get(mem);
+
+        if (pixels) {
+            open_access_parent_protect_segment(mem, display.frame.base.address());
+            unprotect_inner(mem, display.frame.base.address(), texture_data_size);
+        }
+
+        glPixelStorei(GL_UNPACK_ROW_LENGTH, display.frame.pitch);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, display.frame.image_size.x, display.frame.image_size.y, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+
+        if (pixels) {
+            close_access_parent_protect_segment(mem, display.frame.base.address());
+        }
+
+        texture_size.x = static_cast<float>(display.frame.image_size.x);
+        texture_size.y = static_cast<float>(display.frame.image_size.y);
+
+        surface_handle = screen_renderer.get_resident_texture();
+    } else {
+        const GLint standard_swizzle[4] = { GL_RED, GL_GREEN, GL_BLUE, GL_ALPHA };
+
+        glBindTexture(GL_TEXTURE_2D, surface_handle);
+        glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, standard_swizzle);
+    }
+
+    glBindTexture(GL_TEXTURE_2D, last_texture);
+
+    screen_renderer.render(viewport_pos, viewport_size, need_uv ? uvs : nullptr, static_cast<GLuint>(surface_handle), texture_size);
 }
+
+void GLState::swap_window(SDL_Window *window) {
+    SDL_GL_SwapWindow(window);
+}
+
+void GLState::set_fxaa(bool enable_fxaa) {
+    screen_renderer.enable_fxaa = enable_fxaa;
+}
+
+int GLState::get_max_anisotropic_filtering() {
+    float max_aniso;
+    glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &max_aniso);
+    return static_cast<int>(max_aniso);
+}
+
+void GLState::set_anisotropic_filtering(int anisotropic_filtering) {
+    texture_cache.anisotropic_filtering = anisotropic_filtering;
+}
+
+void GLState::precompile_shader(const ShadersHash &hash) {
+    pre_compile_program(*this, base_path, title_id, self_name, hash);
+}
+
+void GLState::preclose_action() {}
 
 } // namespace renderer::gl

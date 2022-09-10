@@ -1,5 +1,5 @@
 // Vita3K emulator project
-// Copyright (C) 2021 Vita3K team
+// Copyright (C) 2022 Vita3K team
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -24,9 +24,9 @@
 #include <shader/usse_translator.h>
 #include <shader/usse_translator_types.h>
 #include <util/log.h>
-#include <util/optional.h>
 
 #include <map>
+#include <optional>
 
 namespace shader::usse {
 
@@ -34,7 +34,7 @@ template <typename Visitor>
 using USSEMatcher = shader::decoder::Matcher<Visitor, uint64_t>;
 
 template <typename V>
-static optional<const USSEMatcher<V>> DecodeUSSE(uint64_t instruction) {
+static std::optional<const USSEMatcher<V>> DecodeUSSE(uint64_t instruction) {
     static const std::vector<USSEMatcher<V>> table = {
 #define INST(fn, name, bitstring) shader::decoder::detail::detail<USSEMatcher<V>>::GetMatcher(fn, name, bitstring)
         // clang-format off
@@ -288,8 +288,7 @@ static optional<const USSEMatcher<V>> DecodeUSSE(uint64_t instruction) {
                                                 e = end (1 bit)
                                                  r = src1_bank_ext (1 bit)
                                                   c = src2_bank_ext (1 bit)
-                                                   - = don't care
-                                                    aaa = repeat_count (3 bits, RepeatCount)
+                                                   aaaa = repeat_count (4 bits, RepeatCount)
                                                        fff = src_fmt (3 bits)
                                                           ttt = dest_fmt (3 bits)
                                                              mmmm = dest_mask (4 bits)
@@ -306,7 +305,7 @@ static optional<const USSEMatcher<V>> DecodeUSSE(uint64_t instruction) {
                                                                                             wwwwww = src2_n (6 bits)
                                                                                                   x = comp_sel_0_bit0 (1 bit)
         */
-        INST(&V::vpck, "VPCK ()", "01000pppsnuyderc-aaaffftttmmmmbbkkllgggggggoohiijjqqqqqqvwwwwwwx"),
+        INST(&V::vpck, "VPCK ()", "01000pppsnuydercaaaaffftttmmmmbbkkllgggggggoohiijjqqqqqqvwwwwwwx"),
         // Test Instructions
         /*
                                    01001 = op1
@@ -520,9 +519,33 @@ static optional<const USSEMatcher<V>> DecodeUSSE(uint64_t instruction) {
         // 16-bit Integer multiply-add
         /*
                                        10100 = opcode1
-                                            ----------------------------------------------------------- = don't care
+                                            pp = pred (2 bits, ShortPredicate)
+                                              a = abs (1 bit)
+                                               s = skipinv (1 bit, bool)
+                                                n = nosched (1 bit, bool)
+                                                 r = src2_neg (1 bit)
+                                                  e = sel1h_upper8 (1 bit)
+                                                   d = dest_bank_ext (1 bit)
+                                                    b = end (1 bit)
+                                                     c = src1_bank_ext (1 bit)
+                                                      k = src2_bank_ext (1 bit)
+                                                       - = don't care
+                                                        ttt = repeat_count (3 bits, RepeatCount)
+                                                           mm = mode (2 bits)
+                                                             ff = src2_format (2 bits)
+                                                               oo = src1_format (2 bits)
+                                                                 l = sel2h_upper8 (1 bit)
+                                                                  hh = or_shift (2 bits)
+                                                                    g = src0_bank (1 bit)
+                                                                     ii = dest_bank (2 bits)
+                                                                       jj = src1_bank (2 bits)
+                                                                         qq = src2_bank (2 bits)
+                                                                           uuuuuuu = dest_n (7 bits)
+                                                                                  vvvvvvv = src0_n (7 bits)
+                                                                                         wwwwwww = src1_n (7 bits)
+                                                                                                xxxxxxx = src2_n (7 bits)
         */
-        INST(&V::i16mad, "I16MAD ()", "10100-----------------------------------------------------------"),
+        INST(&V::i16mad, "I16MAD ()", "10100ppasnredbck-tttmmffoolhhgiijjqquuuuuuuvvvvvvvwwwwwwwxxxxxxx"),
         // 32-bit Integer multiply-add
         /*
                                        10101 = opcode1
@@ -797,12 +820,7 @@ static optional<const USSEMatcher<V>> DecodeUSSE(uint64_t instruction) {
     const auto matches_instruction = [instruction](const auto &matcher) { return matcher.Matches(instruction); };
 
     auto iter = std::find_if(table.begin(), table.end(), matches_instruction);
-    return iter != table.end() ? optional<const USSEMatcher<V>>(*iter) :
-#ifdef VITA3K_CPP17
-                               std::nullopt;
-#else
-                               boost::none;
-#endif
+    return iter != table.end() ? std::optional<const USSEMatcher<V>>(*iter) : std::nullopt;
 }
 
 //
@@ -810,7 +828,7 @@ static optional<const USSEMatcher<V>> DecodeUSSE(uint64_t instruction) {
 //
 
 USSERecompiler::USSERecompiler(spv::Builder &b, const SceGxmProgram &program, const FeatureState &features, const SpirvShaderParameters &parameters,
-    utils::SpirvUtilFunctions &utils, spv::Function *end_hook_func, const NonDependentTextureQueryCallInfos &queries)
+    utils::SpirvUtilFunctions &utils, spv::Function *end_hook_func, const NonDependentTextureQueryCallInfos &queries, const spv::Id render_info_id)
     : inst(nullptr)
     , count(0)
     , b(b)
@@ -1004,7 +1022,7 @@ spv::Function *USSERecompiler::compile_program_function() {
 }
 
 void convert_gxp_usse_to_spirv(spv::Builder &b, const SceGxmProgram &program, const FeatureState &features, const SpirvShaderParameters &parameters, utils::SpirvUtilFunctions &utils,
-    spv::Function *begin_hook_func, spv::Function *end_hook_func, const NonDependentTextureQueryCallInfos &queries) {
+    spv::Function *begin_hook_func, spv::Function *end_hook_func, const NonDependentTextureQueryCallInfos &queries, const spv::Id render_info_id) {
     const uint64_t *primary_program = program.primary_program_start();
     const uint64_t primary_program_instr_count = program.primary_program_instr_count;
 
@@ -1024,7 +1042,7 @@ void convert_gxp_usse_to_spirv(spv::Builder &b, const SceGxmProgram &program, co
 
     // Decode and recompile
     // TODO: Reuse this
-    usse::USSERecompiler recomp(b, program, features, parameters, utils, end_hook_func, queries);
+    usse::USSERecompiler recomp(b, program, features, parameters, utils, end_hook_func, queries, render_info_id);
 
     // Set the program
     recomp.program = &program;
@@ -1049,7 +1067,7 @@ void convert_gxp_usse_to_spirv(spv::Builder &b, const SceGxmProgram &program, co
     b.createFunctionCall(end_hook_func, {});
 
     std::vector<spv::Id> empty_args;
-    if (features.should_use_shader_interlock() && program.is_fragment() && program.is_native_color())
+    if (features.should_use_shader_interlock() && program.is_fragment() && program.is_frag_color_used())
         b.createNoResultOp(spv::OpEndInvocationInterlockEXT);
 }
 

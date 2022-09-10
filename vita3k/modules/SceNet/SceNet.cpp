@@ -17,7 +17,9 @@
 
 #include "SceNet.h"
 
+#include <kernel/state.h>
 #include <net/functions.h>
+#include <net/state.h>
 #include <net/types.h>
 #include <util/lock_and_find.h>
 
@@ -25,7 +27,7 @@
 #include <thread>
 
 EXPORT(int, sceNetAccept, int sid, SceNetSockaddr *addr, unsigned int *addrlen) {
-    auto sock = lock_and_find(sid, host.net.socks, host.kernel.mutex);
+    auto sock = lock_and_find(sid, emuenv.net.socks, emuenv.kernel.mutex);
     if (!sock) {
         return -1;
     }
@@ -33,13 +35,13 @@ EXPORT(int, sceNetAccept, int sid, SceNetSockaddr *addr, unsigned int *addrlen) 
     if (!newsock) {
         return -1;
     }
-    auto id = ++host.net.next_id;
-    host.net.socks.emplace(id, sock);
+    auto id = ++emuenv.net.next_id;
+    emuenv.net.socks.emplace(id, sock);
     return id;
 }
 
 EXPORT(int, sceNetBind, int sid, const SceNetSockaddr *addr, unsigned int addrlen) {
-    auto sock = lock_and_find(sid, host.net.socks, host.kernel.mutex);
+    auto sock = lock_and_find(sid, emuenv.net.socks, emuenv.kernel.mutex);
     if (!sock) {
         return -1;
     }
@@ -51,7 +53,7 @@ EXPORT(int, sceNetClearDnsCache) {
 }
 
 EXPORT(int, sceNetConnect, int sid, const SceNetSockaddr *addr, unsigned int addrlen) {
-    auto sock = lock_and_find(sid, host.net.socks, host.kernel.mutex);
+    auto sock = lock_and_find(sid, emuenv.net.socks, emuenv.kernel.mutex);
     if (!sock) {
         return -1;
     }
@@ -158,7 +160,7 @@ EXPORT(int, sceNetGetpeername) {
 }
 
 EXPORT(int, sceNetGetsockname, int sid, SceNetSockaddr *name, unsigned int *namelen) {
-    auto sock = lock_and_find(sid, host.net.socks, host.kernel.mutex);
+    auto sock = lock_and_find(sid, emuenv.net.socks, emuenv.kernel.mutex);
     if (!sock) {
         return -1;
     }
@@ -182,7 +184,7 @@ EXPORT(unsigned short int, sceNetHtons, unsigned short int n) {
 }
 
 EXPORT(Ptr<const char>, sceNetInetNtop, int af, const void *src, Ptr<char> dst, unsigned int size) {
-    char *dst_ptr = dst.get(host.mem);
+    char *dst_ptr = dst.get(emuenv.mem);
 #ifdef WIN32
     const char *res = InetNtop(af, const_cast<void *>(src), dst_ptr, size);
 #else
@@ -208,7 +210,7 @@ EXPORT(int, sceNetInetPton, int af, const char *src, void *dst) {
 }
 
 EXPORT(int, sceNetInit, SceNetInitParam *param) {
-    if (host.net.inited) {
+    if (emuenv.net.inited) {
         return RET_ERROR(SCE_NET_ERROR_EBUSY);
     }
 #ifdef WIN32
@@ -216,13 +218,13 @@ EXPORT(int, sceNetInit, SceNetInitParam *param) {
     WSADATA wsaData;
     WSAStartup(versionWanted, &wsaData);
 #endif
-    host.net.state = 0;
-    host.net.inited = true;
+    emuenv.net.state = 0;
+    emuenv.net.inited = true;
     return 0;
 }
 
 EXPORT(int, sceNetListen, int sid, int backlog) {
-    auto sock = lock_and_find(sid, host.net.socks, host.kernel.mutex);
+    auto sock = lock_and_find(sid, emuenv.net.socks, emuenv.kernel.mutex);
     if (!sock) {
         return -1;
     }
@@ -242,7 +244,7 @@ EXPORT(unsigned short int, sceNetNtohs, unsigned short int n) {
 }
 
 EXPORT(int, sceNetRecv, int sid, void *buf, unsigned int len, int flags) {
-    auto sock = lock_and_find(sid, host.net.socks, host.kernel.mutex);
+    auto sock = lock_and_find(sid, emuenv.net.socks, emuenv.kernel.mutex);
     if (!sock) {
         return -1;
     }
@@ -250,7 +252,7 @@ EXPORT(int, sceNetRecv, int sid, void *buf, unsigned int len, int flags) {
 }
 
 EXPORT(int, sceNetRecvfrom, int sid, void *buf, unsigned int len, int flags, SceNetSockaddr *from, unsigned int *fromlen) {
-    auto sock = lock_and_find(sid, host.net.socks, host.kernel.mutex);
+    auto sock = lock_and_find(sid, emuenv.net.socks, emuenv.kernel.mutex);
     if (!sock) {
         return -1;
     }
@@ -283,14 +285,14 @@ EXPORT(int, sceNetResolverStartAton, int rid, const SceNetInAddr *addr, char *ho
     return 0;
 }
 
-EXPORT(int, sceNetResolverStartNtoa, int rid, const char *hostname, SceNetInAddr *addr, int timeout, int retry, int flags) {
-    struct hostent *resolved = gethostbyname(hostname);
+EXPORT(int, sceNetResolverStartNtoa, int rid, const char *emuenvname, SceNetInAddr *addr, int timeout, int retry, int flags) {
+    struct hostent *resolved = gethostbyname(emuenvname);
     memcpy(addr, resolved->h_addr, sizeof(uint32_t));
     return 0;
 }
 
 EXPORT(int, sceNetSend, int sid, const void *msg, unsigned int len, int flags) {
-    auto sock = lock_and_find(sid, host.net.socks, host.kernel.mutex);
+    auto sock = lock_and_find(sid, emuenv.net.socks, emuenv.kernel.mutex);
     if (!sock) {
         return -1;
     }
@@ -302,7 +304,7 @@ EXPORT(int, sceNetSendmsg) {
 }
 
 EXPORT(int, sceNetSendto, int sid, const void *msg, unsigned int len, int flags, const SceNetSockaddr *to, unsigned int tolen) {
-    auto sock = lock_and_find(sid, host.net.socks, host.kernel.mutex);
+    auto sock = lock_and_find(sid, emuenv.net.socks, emuenv.kernel.mutex);
     if (!sock) {
         return -1;
     }
@@ -314,7 +316,7 @@ EXPORT(int, sceNetSetDnsInfo) {
 }
 
 EXPORT(int, sceNetSetsockopt, int sid, int level, int optname, const void *optval, unsigned int optlen) {
-    auto sock = lock_and_find(sid, host.net.socks, host.kernel.mutex);
+    auto sock = lock_and_find(sid, emuenv.net.socks, emuenv.kernel.mutex);
     if (!sock) {
         return -1;
     }
@@ -326,7 +328,7 @@ EXPORT(int, sceNetShowIfconfig) {
 }
 
 EXPORT(int, sceNetShowNetstat) {
-    if (!host.net.inited) {
+    if (!emuenv.net.inited) {
         return RET_ERROR(SCE_NET_ERROR_ENOTINIT);
     }
     return 0;
@@ -347,8 +349,8 @@ EXPORT(int, sceNetSocket, const char *name, int domain, int type, int protocol) 
     } else {
         sock = std::make_shared<PosixSocket>(domain, type, protocol);
     }
-    auto id = ++host.net.next_id;
-    host.net.socks.emplace(id, sock);
+    auto id = ++emuenv.net.next_id;
+    emuenv.net.socks.emplace(id, sock);
     return id;
 }
 
@@ -357,7 +359,7 @@ EXPORT(int, sceNetSocketAbort) {
 }
 
 EXPORT(int, sceNetSocketClose, int sid) {
-    auto sock = lock_and_find(sid, host.net.socks, host.kernel.mutex);
+    auto sock = lock_and_find(sid, emuenv.net.socks, emuenv.kernel.mutex);
     if (!sock) {
         return -1;
     }
@@ -365,13 +367,13 @@ EXPORT(int, sceNetSocketClose, int sid) {
 }
 
 EXPORT(int, sceNetTerm) {
-    if (!host.net.inited) {
+    if (!emuenv.net.inited) {
         return RET_ERROR(SCE_NET_ERROR_ENOTINIT);
     }
 #ifdef WIN32
     WSACleanup();
 #endif
-    host.net.inited = false;
+    emuenv.net.inited = false;
     return 0;
 }
 

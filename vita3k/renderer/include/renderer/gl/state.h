@@ -1,5 +1,5 @@
 // Vita3K emulator project
-// Copyright (C) 2021 Vita3K team
+// Copyright (C) 2022 Vita3K team
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -17,7 +17,10 @@
 
 #pragma once
 
+#include <renderer/gl/screen_render.h>
+#include <renderer/gl/surface_cache.h>
 #include <renderer/state.h>
+#include <renderer/texture_cache_state.h>
 #include <renderer/types.h>
 
 #include "types.h"
@@ -37,8 +40,21 @@ struct GLState : public renderer::State {
     ShaderCache vertex_shader_cache;
     ProgramCache program_cache;
 
-    std::vector<ShadersHash> shaders_cache_hashs;
-    std::string shader_version = "v1";
+    GLTextureCacheState texture_cache;
+    GLSurfaceCache surface_cache;
+
+    ScreenRenderer screen_renderer;
+
+    bool init(const char *base_path, const bool hashless_texture_cache) override;
+    void render_frame(const SceFVector2 &viewport_pos, const SceFVector2 &viewport_size, const DisplayState &display,
+        const GxmState &gxm, MemState &mem) override;
+    void swap_window(SDL_Window *window) override;
+    void set_fxaa(bool enable_fxaa) override;
+    int get_max_anisotropic_filtering() override;
+    void set_anisotropic_filtering(int anisotropic_filtering) override;
+
+    void precompile_shader(const ShadersHash &hash) override;
+    void preclose_action() override;
 };
 
 } // namespace renderer::gl

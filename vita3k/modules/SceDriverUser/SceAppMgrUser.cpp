@@ -17,9 +17,11 @@
 
 #include "SceAppMgrUser.h"
 
-#include <host/app_util.h>
-#include <host/functions.h>
+#include <emuenv/app_util.h>
+#include <io/device.h>
 #include <io/functions.h>
+#include <io/io.h>
+#include <packages/functions.h>
 
 #include <modules/module_parent.h>
 #include <util/find.h>
@@ -42,7 +44,7 @@ struct SceAppMgrSaveDataData {
     Ptr<SceAppUtilSaveDataDataSaveItem> files;
     int fileNum;
     SceAppUtilMountPoint *mountPoint;
-    unsigned int *requiredSizeKB;
+    unsigned int *requiredSizeKiB;
 };
 
 EXPORT(SceInt32, _sceAppMgrGetAppState, SceAppMgrAppState *appState, SceUInt32 sizeofSceAppMgrAppState, SceUInt32 buildVersion) {
@@ -182,8 +184,29 @@ EXPORT(int, sceAppMgrGetCurrentBgmState2) {
     return UNIMPLEMENTED();
 }
 
-EXPORT(int, sceAppMgrGetDevInfo) {
-    return UNIMPLEMENTED();
+EXPORT(int, sceAppMgrGetDevInfo, const char *dev, uint64_t *max_size, uint64_t *free_size) {
+    if (dev == nullptr) {
+        return RET_ERROR(SCE_ERROR_ERRNO_EINVAL);
+    }
+
+    auto device = device::get_device(dev);
+    if (device == VitaIoDevice::_INVALID) {
+        LOG_ERROR("Cannot find device for path: {}", dev);
+        return RET_ERROR(SCE_ERROR_ERRNO_ENOENT);
+    }
+
+    fs::path dev_path = device._to_string();
+    fs::path path = emuenv.pref_path / dev_path;
+    fs::space_info space = fs::space(path);
+
+    // TODO: Use free or available?
+    // free = free space available on the whole partition
+    // available = free space available to a non-privileged process
+    // Using available in case the drive is nearly full and the game tries to write since available will always be smaller
+    *free_size = space.available;
+    *max_size = space.capacity;
+
+    return 0;
 }
 
 EXPORT(int, sceAppMgrGetFgAppInfo) {
@@ -400,12 +423,12 @@ EXPORT(int, sceAppMgrSaveDataAddMount) {
 }
 
 EXPORT(int, sceAppMgrSaveDataDataRemove, Ptr<SceAppMgrSaveDataDataDelete> data) {
-    for (int i = 0; i < data.get(host.mem)->fileNum; i++) {
-        const auto file = fs::path(construct_savedata0_path(data.get(host.mem)->files.get(host.mem)[i].dataPath.get(host.mem)));
+    for (int i = 0; i < data.get(emuenv.mem)->fileNum; i++) {
+        const auto file = fs::path(construct_savedata0_path(data.get(emuenv.mem)->files.get(emuenv.mem)[i].dataPath.get(emuenv.mem)));
         if (fs::is_regular_file(file)) {
-            remove_file(host.io, file.string().c_str(), host.pref_path, export_name);
+            remove_file(emuenv.io, file.string().c_str(), emuenv.pref_path, export_name);
         } else
-            remove_dir(host.io, file.string().c_str(), host.pref_path, export_name);
+            remove_dir(emuenv.io, file.string().c_str(), emuenv.pref_path, export_name);
     }
 
     return 0;
@@ -418,33 +441,33 @@ EXPORT(int, sceAppMgrSaveDataDataRemove2) {
 EXPORT(int, sceAppMgrSaveDataDataSave, Ptr<SceAppMgrSaveDataData> data) {
     SceUID fd;
 
-    for (int i = 0; i < data.get(host.mem)->fileNum; i++) {
-        auto files = data.get(host.mem)->files.get(host.mem);
+    for (int i = 0; i < data.get(emuenv.mem)->fileNum; i++) {
+        auto files = data.get(emuenv.mem)->files.get(emuenv.mem);
 
-        const auto file_path = construct_savedata0_path(files[i].dataPath.get(host.mem));
+        const auto file_path = construct_savedata0_path(files[i].dataPath.get(emuenv.mem));
         switch (files[i].mode) {
         case SCE_APPUTIL_SAVEDATA_DATA_SAVE_MODE_DIRECTORY:
-            create_dir(host.io, file_path.c_str(), 0777, host.pref_path, export_name);
+            create_dir(emuenv.io, file_path.c_str(), 0777, emuenv.pref_path, export_name);
             break;
         case SCE_APPUTIL_SAVEDATA_DATA_SAVE_MODE_FILE_TRUNCATE:
             if (files[i].buf) {
-                fd = open_file(host.io, file_path.c_str(), SCE_O_WRONLY | SCE_O_CREAT, host.pref_path, export_name);
-                seek_file(fd, static_cast<int>(files[i].offset), SCE_SEEK_SET, host.io, export_name);
-                write_file(fd, files[i].buf.get(host.mem), files[i].bufSize, host.io, export_name);
-                close_file(host.io, fd, export_name);
+                fd = open_file(emuenv.io, file_path.c_str(), SCE_O_WRONLY | SCE_O_CREAT, emuenv.pref_path, export_name);
+                seek_file(fd, static_cast<int>(files[i].offset), SCE_SEEK_SET, emuenv.io, export_name);
+                write_file(fd, files[i].buf.get(emuenv.mem), files[i].bufSize, emuenv.io, export_name);
+                close_file(emuenv.io, fd, export_name);
             }
-            fd = open_file(host.io, file_path.c_str(), SCE_O_WRONLY | SCE_O_APPEND | SCE_O_TRUNC, host.pref_path, export_name);
-            truncate_file(fd, files[i].bufSize + files[i].offset, host.io, export_name);
-            close_file(host.io, fd, export_name);
+            fd = open_file(emuenv.io, file_path.c_str(), SCE_O_WRONLY | SCE_O_APPEND | SCE_O_TRUNC, emuenv.pref_path, export_name);
+            truncate_file(fd, files[i].bufSize + files[i].offset, emuenv.io, export_name);
+            close_file(emuenv.io, fd, export_name);
             break;
         case SCE_APPUTIL_SAVEDATA_DATA_SAVE_MODE_FILE:
         default:
-            fd = open_file(host.io, file_path.c_str(), SCE_O_WRONLY | SCE_O_CREAT, host.pref_path, export_name);
-            seek_file(fd, static_cast<int>(files[i].offset), SCE_SEEK_SET, host.io, export_name);
-            if (files[i].buf.get(host.mem)) {
-                write_file(fd, files[i].buf.get(host.mem), files[i].bufSize, host.io, export_name);
+            fd = open_file(emuenv.io, file_path.c_str(), SCE_O_WRONLY | SCE_O_CREAT, emuenv.pref_path, export_name);
+            seek_file(fd, static_cast<int>(files[i].offset), SCE_SEEK_SET, emuenv.io, export_name);
+            if (files[i].buf.get(emuenv.mem)) {
+                write_file(fd, files[i].buf.get(emuenv.mem), files[i].bufSize, emuenv.io, export_name);
             }
-            close_file(host.io, fd, export_name);
+            close_file(emuenv.io, fd, export_name);
             break;
         }
     }

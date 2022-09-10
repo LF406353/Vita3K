@@ -20,12 +20,13 @@
 #include <codec/state.h>
 #include <ngs/system.h>
 
+struct SwrContext;
+
 namespace ngs::player {
 enum {
-    SCE_NGS_PLAYER_CALLBACK_REASON_DONE_ALL = 0,
-    SCE_NGS_PLAYER_CALLBACK_REASON_DONE_ONE_BUFFER = 1,
-    SCE_NGS_PLAYER_CALLBACK_REASON_START_LOOP = 2,
-    SCE_NGS_PLAYER_CALLBACK_REASON_DECODE_ERROR = 3
+    SCE_NGS_PLAYER_END_OF_DATA = 0,
+    SCE_NGS_PLAYER_SWAPPED_BUFFER = 1,
+    SCE_NGS_PLAYER_LOOPED_BUFFER = 2,
 };
 
 struct BufferParameters {
@@ -48,12 +49,19 @@ struct State {
     SceInt32 current_buffer = 0;
     SceInt32 samples_generated_since_key_on = 0;
     SceInt32 bytes_consumed_since_key_on = 0;
+    SceInt32 samples_generated_total = 0;
     SceInt32 total_bytes_consumed = 0;
 
     // INTERNAL
     std::int8_t current_loop_count = 0;
-    std::uint32_t decoded_gran_pending = 0;
-    std::uint32_t decoded_gran_passed = 0;
+    std::uint32_t decoded_samples_pending = 0;
+    std::uint32_t decoded_samples_passed = 0;
+    // needed for he_adpcm because a same decoder can be used for many voices
+    ADPCMHistory adpcm_history[MAX_PCM_CHANNELS] = {};
+    // used if the input must be resampled
+    SwrContext *swr = nullptr;
+    // if we need at some point to reset the resampler params
+    bool reset_swr = false;
 };
 
 struct Parameters {
@@ -90,15 +98,12 @@ struct Module : public ngs::Module {
 private:
     std::unique_ptr<PCMDecoderState> decoder;
 
-    // Logging flag to control over playback rate scaling
-    // It gets set to false once playback rate scaling is requested to prevent log event repetition
-    bool LOG_PLAYBACK_SCALING = true;
-
 public:
     explicit Module();
-    bool process(KernelState &kern, const MemState &mem, const SceUID thread_id, ModuleData &data) override;
+    bool process(KernelState &kern, const MemState &mem, const SceUID thread_id, ModuleData &data, std::unique_lock<std::recursive_mutex> &scheduler_lock, std::unique_lock<std::mutex> &voice_lock) override;
     std::uint32_t module_id() const override { return 0x5CE6; }
     std::size_t get_buffer_parameter_size() const override;
     void on_state_change(ModuleData &v, const VoiceState previous) override;
+    void on_param_change(const MemState &mem, ModuleData &data) override;
 };
 } // namespace ngs::player

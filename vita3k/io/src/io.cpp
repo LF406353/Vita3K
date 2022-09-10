@@ -54,6 +54,9 @@ static int io_error_impl(const int retval, const char *export_name, const char *
 #define IO_ERROR_UNK() IO_ERROR(-1)
 
 constexpr bool log_file_op = true;
+constexpr bool log_file_read = false;
+constexpr bool log_file_seek = false;
+constexpr bool log_file_stat = false;
 
 namespace vfs {
 
@@ -76,10 +79,10 @@ bool read_app_file(FileBuffer &buf, const std::wstring &pref_path, const std::st
 
 SpaceInfo get_space_info(const VitaIoDevice device, const std::string &vfs_path, const std::wstring &pref_path) {
     SpaceInfo space_info;
-    const auto host_path = device::construct_emulated_path(device, vfs_path, pref_path);
-    space_info.max_capacity = fs::space(host_path).capacity;
-    space_info.free = fs::space(host_path).available;
-    space_info.used = fs::space(host_path).capacity - space_info.free;
+    const auto emuenv_path = device::construct_emulated_path(device, vfs_path, pref_path);
+    space_info.max_capacity = fs::space(emuenv_path).capacity;
+    space_info.free = fs::space(emuenv_path).available;
+    space_info.used = fs::space(emuenv_path).capacity - space_info.free;
     return space_info;
 }
 
@@ -173,6 +176,9 @@ bool find_case_isens_path(IOState &io, VitaIoDevice &device, const fs::path &tra
         return false;
     }
     }
+
+    if (!fs::exists(final_path))
+        return false;
 
     for (const auto &file : fs::recursive_directory_iterator(final_path)) {
         io.cachemap.insert(std::make_pair(string_utils::tolower(file.path().string()), file.path().string()));
@@ -295,33 +301,35 @@ SceUID open_file(IOState &io, const char *path, const int flags, const std::wstr
 
     auto system_path = device::construct_emulated_path(device, translated_path, pref_path, io.redirect_stdio);
     // Do not allow any new files if they do not have a write flag.
-    if (!fs::exists(system_path) && !can_write(flags)) {
-        if (io.case_isens_find_enabled) {
-            // Attempt a case-insensitive file search.
-            const auto original_system_path = system_path;
-            const auto cached_path = find_in_cache(io, string_utils::tolower(system_path.string()));
-            if (!cached_path.empty()) {
-                system_path = cached_path;
-                LOG_TRACE("Found cached filepath at {}", system_path.string());
-            } else {
-                const bool path_found = find_case_isens_path(io, device_for_icase, translated_path, system_path);
-                system_path = find_in_cache(io, string_utils::tolower(system_path.string()));
-                if (!system_path.empty() && path_found) {
-                    LOG_TRACE("Found file on case-sensitive filesystem at {}", system_path.string());
+    if (!fs::exists(system_path)) {
+        if (!(flags & SCE_O_CREAT)) {
+            if (io.case_isens_find_enabled) {
+                // Attempt a case-insensitive file search.
+                const auto original_system_path = system_path;
+                const auto cached_path = find_in_cache(io, string_utils::tolower(system_path.string()));
+                if (!cached_path.empty()) {
+                    system_path = cached_path;
+                    LOG_TRACE("Found cached filepath at {}", system_path.string());
                 } else {
-                    LOG_ERROR("Missing file at {} (target path: {})", original_system_path.string(), path);
-                    return IO_ERROR(SCE_ERROR_ERRNO_ENOENT);
+                    const bool path_found = find_case_isens_path(io, device_for_icase, translated_path, system_path);
+                    system_path = find_in_cache(io, string_utils::tolower(system_path.string()));
+                    if (!system_path.empty() && path_found) {
+                        LOG_TRACE("Found file on case-sensitive filesystem at {}", system_path.string());
+                    } else {
+                        LOG_ERROR("Missing file at {} (target path: {})", original_system_path.string(), path);
+                        return IO_ERROR(SCE_ERROR_ERRNO_ENOENT);
+                    }
                 }
+            } else {
+                LOG_ERROR("Missing file at {} (target path: {})", system_path.string(), path);
+                return IO_ERROR(SCE_ERROR_ERRNO_ENOENT);
             }
         } else {
-            LOG_ERROR("Missing file at {} (target path: {})", system_path.string(), path);
-            return IO_ERROR(SCE_ERROR_ERRNO_ENOENT);
+            if (!fs::exists(system_path.parent_path())) {
+                fs::create_directories(system_path.parent_path());
+            }
+            std::ofstream file(system_path.string());
         }
-    } else if (!fs::exists(system_path) && (flags & SCE_O_CREAT)) {
-        if (!fs::exists(system_path.parent_path())) {
-            fs::create_directories(system_path.parent_path());
-        }
-        std::ofstream file(system_path.string());
     }
 
     const auto normalized_path = device::construct_normalized_path(device, translated_path);
@@ -341,7 +349,7 @@ int read_file(void *data, IOState &io, const SceUID fd, const SceSize size, cons
     const auto file = io.std_files.find(fd);
     if (file != io.std_files.end()) {
         const auto read = file->second.read(data, 1, size);
-        LOG_TRACE_IF(log_file_op, "{}: Reading {} bytes of fd {}", export_name, read, log_hex(fd));
+        LOG_TRACE_IF(log_file_op && log_file_read, "{}: Reading {} bytes of fd {}", export_name, read, log_hex(fd));
         return static_cast<int>(read);
     }
 
@@ -349,7 +357,7 @@ int read_file(void *data, IOState &io, const SceUID fd, const SceSize size, cons
     if (tty_file != io.tty_files.end()) {
         if (tty_file->second == TTY_IN) {
             std::cin.read(reinterpret_cast<char *>(data), size);
-            LOG_TRACE_IF(log_file_op, "{}: Reading terminal fd: {}, size: {}", export_name, log_hex(fd), size);
+            LOG_TRACE_IF(log_file_op && log_file_read, "{}: Reading terminal fd: {}, size: {}", export_name, log_hex(fd), size);
             return size;
         }
         return IO_ERROR_UNK();
@@ -438,7 +446,7 @@ SceOff seek_file(const SceUID fd, const SceOff offset, const SceIoSeekMode whenc
         }
     };
 
-    LOG_TRACE_IF(log_file_op, "{}: Seeking fd: {}, offset: {}, whence: {}", export_name, log_hex(fd), log_hex(offset), log_mode(whence));
+    LOG_TRACE_IF(log_file_op && log_file_seek, "{}: Seeking fd: {}, offset: {}, whence: {}", export_name, log_hex(fd), log_hex(offset), log_mode(whence));
     return file->second.tell();
 }
 
@@ -496,14 +504,14 @@ int stat_file(IOState &io, const char *file, SceIoStat *statp, const std::wstrin
                 return IO_ERROR(SCE_ERROR_ERRNO_ENOENT);
             }
         }
-        LOG_TRACE_IF(log_file_op, "{}: Statting file: {} ({})", export_name, file, device::construct_normalized_path(device, translated_path));
+        LOG_TRACE_IF(log_file_op && log_file_stat, "{}: Statting file: {} ({})", export_name, file, device::construct_normalized_path(device, translated_path));
     } else { // We have previously opened and defined the location
         const auto fd_file = io.std_files.find(fd);
         if (fd_file == io.std_files.end())
             return IO_ERROR(SCE_ERROR_ERRNO_EBADFD);
 
         file_path = fd_file->second.get_system_location();
-        LOG_TRACE_IF(log_file_op, "{}: Statting fd: {}", export_name, log_hex(fd));
+        LOG_TRACE_IF(log_file_op && log_file_stat, "{}: Statting fd: {}", export_name, log_hex(fd));
 
         statp->st_attr = fd_file->second.get_file_mode();
     }
@@ -682,6 +690,44 @@ SceUID read_dir(IOState &io, const SceUID fd, SceIoDirent *dent, const std::wstr
     }
 
     return IO_ERROR(SCE_ERROR_ERRNO_EBADFD);
+}
+
+bool copy_directories(const fs::path &src_path, const fs::path &dst_path) {
+    try {
+        if (!fs::exists(dst_path))
+            fs::create_directories(dst_path);
+
+        for (const auto &src : fs::recursive_directory_iterator(src_path)) {
+            const auto dst_parent_path = dst_path / fs::relative(src, src_path).parent_path();
+            const auto dst_path = dst_parent_path / src.path().filename();
+
+            LOG_INFO("Copy {}", dst_path.string());
+
+            if (fs::is_regular_file(src))
+                fs::copy_file(src, dst_path, fs::copy_option::overwrite_if_exists);
+            else if (!fs::exists(dst_path))
+                fs::create_directory(dst_path);
+        }
+
+        return true;
+    } catch (std::exception &e) {
+        std::cout << e.what();
+        return false;
+    }
+}
+
+bool copy_path(const fs::path src_path, std::wstring pref_path, std::string app_title_id, std::string app_category) {
+    // Check if is path
+    if (app_category.find("gp") != std::string::npos) {
+        const auto app_path{ fs::path(pref_path) / "ux0/app" / app_title_id };
+        const auto result = copy_directories(src_path, app_path);
+
+        fs::remove_all(src_path);
+
+        return result;
+    }
+
+    return true;
 }
 
 int create_dir(IOState &io, const char *dir, int mode, const std::wstring &pref_path, const char *export_name, const bool recursive) {

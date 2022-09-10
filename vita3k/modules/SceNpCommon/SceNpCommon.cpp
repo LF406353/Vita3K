@@ -17,12 +17,32 @@
 
 #include "SceNpCommon.h"
 
+#include <io/state.h>
+#include <kernel/state.h>
+#include <np/common.h>
+
 EXPORT(int, sceNpAuthAbortRequest) {
     return UNIMPLEMENTED();
 }
 
-EXPORT(int, sceNpAuthCreateStartRequest) {
-    return UNIMPLEMENTED();
+struct SceNpAuthRequestParameter {
+    SceSize size;
+    uint32_t version;
+    Ptr<const char> serviceId;
+    Ptr<const void> cookie;
+    SceSize cookieSize;
+    Ptr<const char> entitlementId;
+    SceUInt32 consumedCount;
+    Ptr<void> ticketCb; // int (*ticketCb)(SceNpAuthRequestId, int, void *);
+    Ptr<void> cbArg;
+};
+
+EXPORT(int, sceNpAuthCreateStartRequest, const SceNpAuthRequestParameter *param) {
+    const ThreadStatePtr thread = emuenv.kernel.get_thread(thread_id);
+    // todo: this callback function should be called from sceNpCheckCallback
+    STUBBED("Immediately call ticket callback");
+    thread->request_callback(param->ticketCb.address(), { 1, 1, param->cbArg.address() });
+    return 1;
 }
 
 EXPORT(int, sceNpAuthDestroyRequest) {
@@ -59,7 +79,7 @@ EXPORT(int, sceNpAuthTerm) {
 
 EXPORT(int, sceNpCmpNpId, np::NpId *npid1, np::NpId *npid2) {
     STUBBED("assume single user");
-    if (std::string(npid1->online_id.name) == host.io.user_name && std::string(npid2->online_id.name) == host.io.user_name) {
+    if (std::string(npid1->online_id.name) == emuenv.io.user_name && std::string(npid2->online_id.name) == emuenv.io.user_name) {
         return 0;
     }
     return 0x80550605; // INVALID NP ID

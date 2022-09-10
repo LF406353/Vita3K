@@ -27,18 +27,28 @@ struct KernelState;
 struct WaitingThreadData {
     ThreadStatePtr thread;
     int32_t priority;
+    bool *was_canceled;
 
     // additional fields for each primitive
     union {
         struct { // mutex
             int32_t lock_count;
         };
+        struct { // rwlock
+            bool is_write;
+        };
         struct { // semaphore
             int32_t signal;
+        };
+        struct { // simple events
+            int32_t pattern;
+            uint32_t *result_pattern;
+            uint64_t *user_data;
         };
         struct { // event flags
             int32_t wait;
             int32_t flags;
+            uint32_t *outBits;
         };
         // struct { }; // condvar
         struct { // msgpipe
@@ -68,7 +78,6 @@ typedef std::unique_ptr<ThreadDataQueue<WaitingThreadData>> WaitingThreadQueuePt
 // NOTE: uid is copied to sync primitives here for debugging,
 //       not really needed since they are put in std::map's
 struct SyncPrimitive {
-    // FIXME turn this into SimpleEvent!
     SceUID uid;
 
     uint32_t attr;
@@ -79,6 +88,20 @@ struct SyncPrimitive {
 
     virtual ~SyncPrimitive() = default;
 };
+
+struct SimpleEvent : SyncPrimitive {
+    WaitingThreadQueuePtr waiting_threads;
+    SceUInt32 pattern;
+    SceUInt64 last_user_data;
+
+    bool auto_reset;
+    bool cb_wakeup_only;
+
+    ~SimpleEvent() override = default;
+};
+
+typedef std::shared_ptr<SimpleEvent> SimpleEventPtr;
+typedef std::map<SceUID, SimpleEventPtr> SimpleEventPtrs;
 
 struct Semaphore : SyncPrimitive {
     WaitingThreadQueuePtr waiting_threads;
@@ -103,6 +126,26 @@ struct Mutex : SyncPrimitive {
 
 typedef std::shared_ptr<Mutex> MutexPtr;
 typedef std::map<SceUID, MutexPtr> MutexPtrs;
+
+enum class RWLockState {
+    Unlocked,
+    ReadLocked,
+    WriteLocked,
+};
+
+// the int value is the lock count for recursive locks
+typedef std::map<ThreadStatePtr, int> RWLockOwners;
+
+struct RWLock : SyncPrimitive {
+    RWLockState state;
+    RWLockOwners owners;
+    WaitingThreadQueuePtr waiting_threads;
+
+    ~RWLock() override = default;
+};
+
+typedef std::shared_ptr<RWLock> RWLockPtr;
+typedef std::map<SceUID, RWLockPtr> RWLockPtrs;
 
 struct EventFlag : SyncPrimitive {
     WaitingThreadQueuePtr waiting_threads;
@@ -162,6 +205,13 @@ enum class SyncWeight {
     Heavy // 'heavy'weight
 };
 
+// simple events
+SceUID simple_event_create(KernelState &kernel, MemState &mem, const char *export_name, const char *name, SceUID thread_id, SceUInt32 attr, SceUInt32 init_pattern);
+SceInt32 simple_event_waitorpoll(KernelState &kernel, const char *export_name, SceUID thread_id, SceUID event_id, SceUInt32 bit_pattern, SceUInt32 *result_pattern, SceUInt64 *user_data, SceUInt32 *timeout, bool is_wait);
+SceInt32 simple_event_setorpulse(KernelState &kernel, const char *export_name, SceUID thread_id, SceUID event_id, SceUInt32 pattern, SceUInt64 user_data, bool is_set);
+SceInt32 simple_event_clear(KernelState &kernel, const char *export_name, SceUID thread_id, SceUID event_id, SceUInt32 clear_pattern);
+SceInt32 simple_event_delete(KernelState &kernel, const char *export_name, SceUID thread_id, SceUID event_id);
+
 // Mutex
 SceUID mutex_create(SceUID *uid_out, KernelState &kernel, MemState &mem, const char *export_name, const char *name, SceUID thread_id, SceUInt attr, int init_count, Ptr<SceKernelLwMutexWork> workarea, SyncWeight weight);
 int mutex_lock(KernelState &kernel, MemState &mem, const char *export_name, SceUID thread_id, SceUID mutexid, int lock_count, unsigned int *timeout, SyncWeight weight);
@@ -170,9 +220,15 @@ int mutex_unlock(KernelState &kernel, const char *export_name, SceUID thread_id,
 int mutex_delete(KernelState &kernel, const char *export_name, SceUID thread_id, SceUID mutexid, SyncWeight weight);
 MutexPtr mutex_get(KernelState &kernel, const char *export_name, SceUID thread_id, SceUID mutexid, SyncWeight weight);
 
+// RWLock
+SceUID rwlock_create(KernelState &kernel, MemState &mem, const char *export_name, const char *name, SceUID thread_id, SceUInt32 attr);
+SceInt32 rwlock_lock(KernelState &kernel, MemState &mem, const char *export_name, SceUID thread_id, SceUID lock_id, uint32_t *timeout, bool is_write);
+SceInt32 rwlock_unlock(KernelState &kernel, MemState &mem, const char *export_name, SceUID thread_id, SceUID lock_id, bool is_write);
+SceInt32 rwlock_delete(KernelState &kernel, MemState &mem, const char *export_name, SceUID thread_id, SceUID lock_id);
+
 // Semaphore
 SceUID semaphore_create(KernelState &kernel, const char *export_name, const char *name, SceUID thread_id, SceUInt attr, int initVal, int maxVal);
-int semaphore_wait(KernelState &kernel, const char *export_name, SceUID thread_id, SceUID semaid, SceInt32 signal, SceUInt *timeout);
+SceInt32 semaphore_wait(KernelState &kernel, const char *export_name, SceUID thread_id, SceUID semaId, SceInt32 needCount, SceUInt32 *pTimeout);
 int semaphore_signal(KernelState &kernel, const char *export_name, SceUID thread_id, SceUID semaid, int signal);
 int semaphore_delete(KernelState &kernel, const char *export_name, SceUID thread_id, SceUID semaid);
 
@@ -188,11 +244,12 @@ SceUID eventflag_create(KernelState &kernel, const char *export_name, SceUID thr
 SceInt32 eventflag_wait(KernelState &kernel, const char *export_name, SceUID thread_id, SceUID evfId, SceUInt32 bitPattern, SceUInt32 waitMode, SceUInt32 *pResultPat, SceUInt32 *pTimeout);
 int eventflag_poll(KernelState &kernel, const char *export_name, SceUID thread_id, SceUID eventflagid, unsigned int flags, unsigned int wait, unsigned int *outBits);
 SceInt32 eventflag_set(KernelState &kernel, const char *export_name, SceUID thread_id, SceUID evfId, SceUInt32 bitPattern);
+SceInt32 eventflag_cancel(KernelState &kernel, const char *export_name, SceUID thread_id, SceUID event_id, SceUInt32 pattern, SceUInt32 *num_wait_threads);
 int eventflag_delete(KernelState &kernel, const char *export_name, SceUID thread_id, SceUID event_id);
 
 // Message Pipe
 SceUID msgpipe_create(KernelState &kernel, const char *export_name, const char *name, SceUID thread_id, SceUInt attr, SceSize bufSize);
 SceUID msgpipe_find(KernelState &kernel, const char *export_name, const char *name);
-int msgpipe_recv(KernelState &kernel, const char *export_name, SceUID thread_id, SceUID msgpipe_id, SceUInt32 wait_mode, char *recv_buf, SceSize msg_size, SceUInt32 *timeout);
-int msgpipe_send(KernelState &kernel, const char *export_name, SceUID thread_id, SceUID msgpipe_id, SceUInt32 wait_mode, char *send_buf, SceSize msg_size, SceUInt32 *timeout);
+SceSize msgpipe_recv(KernelState &kernel, const char *export_name, SceUID thread_id, SceUID msgPipeId, SceUInt32 waitMode, void *pRecvBuf, SceSize recvSize, SceUInt32 *pTimeout);
+SceSize msgpipe_send(KernelState &kernel, const char *export_name, SceUID thread_id, SceUID msgPipeId, SceUInt32 waitMode, const void *pSendBuf, SceSize sendSize, SceUInt32 *pTimeout);
 SceUID msgpipe_delete(KernelState &kernel, const char *export_name, const char *name, SceUID thread_id, SceUID msgpipe_id);

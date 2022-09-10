@@ -15,63 +15,97 @@
 // with this program; if not, write to the Free Software Foundation, Inc.,
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
+#include <display/functions.h>
+
 #include <display/state.h>
+#include <emuenv/state.h>
 #include <kernel/state.h>
+#include <renderer/state.h>
 
 #include <chrono>
+#include <touch/functions.h>
 #include <util/find.h>
 
 // Code heavily influenced by PPSSSPP's SceDisplay.cpp
 
 static constexpr int TARGET_FPS = 60;
-static constexpr int TARGET_MS_PER_FRAME = 1000 / TARGET_FPS;
+static constexpr int64_t TARGET_MICRO_PER_FRAME = 1000000LL / TARGET_FPS;
 
-static void vblank_sync_thread(DisplayState &display) {
+static void vblank_sync_thread(EmuEnvState &emuenv) {
+    DisplayState &display = emuenv.display;
+
     while (!display.abort.load()) {
         {
             const std::lock_guard<std::mutex> guard(display.mutex);
-            for (std::size_t i = 0; i < display.vblank_wait_infos.size(); i++) {
-                if (--display.vblank_wait_infos[i].vsync_left == 0) {
-                    ThreadStatePtr target_wait = display.vblank_wait_infos[i].target_thread;
 
-                    target_wait->resume();
-                    target_wait->status_cond.notify_all();
-
-                    display.vblank_wait_infos.erase(display.vblank_wait_infos.begin() + i--);
+            {
+                const std::lock_guard<std::mutex> guard_info(display.display_info_mutex);
+                display.vblank_count++;
+                // register framebuf change made by _sceDisplaySetFrameBuf
+                if (display.has_next_frame) {
+                    display.frame = display.next_frame;
+                    display.has_next_frame = false;
+                    emuenv.renderer->should_display = true;
                 }
             }
-            display.vblank_count++;
+
+            // maybe we should also use a mutex for this part, but it shouldn't be an issue
+            touch_vsync_update(emuenv);
+
+            // Notify Vblank callback in each VBLANK start
+            for (auto &cb : display.vblank_callbacks)
+                cb.second->event_notify(cb.second->get_notifier_id());
+
+            for (std::size_t i = 0; i < display.vblank_wait_infos.size();) {
+                auto &vblank_wait_info = display.vblank_wait_infos[i];
+                if (vblank_wait_info.target_vcount <= display.vblank_count) {
+                    ThreadStatePtr target_wait = vblank_wait_info.target_thread;
+
+                    target_wait->update_status(ThreadStatus::run);
+
+                    if (vblank_wait_info.is_cb) {
+                        for (auto &callback : display.vblank_callbacks) {
+                            CallbackPtr &cb = callback.second;
+                            if (cb->get_owner_thread_id() == target_wait->id) {
+                                std::string name = cb->get_name();
+                                cb->execute(emuenv.kernel, [name]() {
+                                });
+                            }
+                        }
+                    }
+
+                    display.vblank_wait_infos.erase(display.vblank_wait_infos.begin() + i);
+                } else {
+                    i++;
+                }
+            }
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(TARGET_MS_PER_FRAME));
+        const auto time_ms = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        const auto time_left = TARGET_MICRO_PER_FRAME - (time_ms % TARGET_MICRO_PER_FRAME);
+        std::this_thread::sleep_for(std::chrono::microseconds(time_left));
     }
 }
 
-void wait_vblank(DisplayState &display, KernelState &kernel, const SceUID thread_id, int count, const bool since_last_setbuf) {
-    if (!display.vblank_thread) {
-        display.vblank_thread = std::make_unique<std::thread>(vblank_sync_thread, std::ref(display));
-    }
+void start_sync_thread(EmuEnvState &emuenv) {
+    emuenv.display.vblank_thread = std::make_unique<std::thread>(vblank_sync_thread, std::ref(emuenv));
+}
 
-    const ThreadStatePtr wait_thread = util::find(thread_id, kernel.threads);
+void wait_vblank(DisplayState &display, KernelState &kernel, const ThreadStatePtr &wait_thread, const uint64_t target_vcount, const bool is_cb) {
     if (!wait_thread) {
         return;
     }
 
+    auto thread_lock = std::unique_lock(wait_thread->mutex);
+
     {
         const std::lock_guard<std::mutex> guard(display.mutex);
-        if (since_last_setbuf) {
-            const std::size_t blank_passed = display.vblank_count - display.last_setframe_vblank_count;
-            if (blank_passed >= count) {
-                return;
-            } else {
-                count -= static_cast<int>(blank_passed);
-            }
-        }
-        display.vblank_wait_infos.push_back({ wait_thread, count });
+
+        if (target_vcount <= display.vblank_count)
+            return;
+
+        wait_thread->update_status(ThreadStatus::wait);
+        display.vblank_wait_infos.push_back({ wait_thread, target_vcount, is_cb });
     }
 
-    auto thread_lock = std::unique_lock(wait_thread->mutex);
-    thread_lock.unlock();
-
-    wait_thread->suspend();
-    wait_thread->status_cond.wait(thread_lock, [=]() { return wait_thread->status != ThreadStatus::suspend; });
+    wait_thread->status_cond.wait(thread_lock, [=]() { return wait_thread->status == ThreadStatus::run; });
 }

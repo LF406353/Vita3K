@@ -95,10 +95,19 @@ std::uint8_t **set_vertex_stream(State &state, Context *ctx, const std::size_t i
 }
 
 void draw(State &state, Context *ctx, SceGxmPrimitiveType prim_type, SceGxmIndexFormat index_type, const void *index_data, const std::uint32_t index_count, const std::uint32_t instance_count) {
-    std::uint8_t *a_copy = new std::uint8_t[index_count * gxm::index_element_size(index_type)];
+    renderer::add_command(ctx, renderer::CommandOpcode::Draw, nullptr, prim_type, index_type, index_data, index_count, instance_count);
+}
 
-    std::memcpy(a_copy, index_data, index_count * gxm::index_element_size(index_type));
-    renderer::add_command(ctx, renderer::CommandOpcode::Draw, nullptr, prim_type, index_type, a_copy, index_count, instance_count);
+void transfer_copy(State &state, uint32_t colorKeyValue, uint32_t colorKeyMask, SceGxmTransferColorKeyMode colorKeyMode, const SceGxmTransferImage *images, SceGxmTransferType srcType, SceGxmTransferType destType) {
+    renderer::send_single_command(state, nullptr, renderer::CommandOpcode::TransferCopy, false, colorKeyValue, colorKeyMask, colorKeyMode, images, srcType, destType);
+}
+
+void transfer_downscale(State &state, const SceGxmTransferImage *src, const SceGxmTransferImage *dest) {
+    renderer::send_single_command(state, nullptr, renderer::CommandOpcode::TransferDownscale, false, src, dest);
+}
+
+void transfer_fill(State &state, uint32_t fillColor, const SceGxmTransferImage *dest) {
+    renderer::send_single_command(state, nullptr, renderer::CommandOpcode::TransferFill, false, fillColor, dest);
 }
 
 void sync_surface_data(State &state, Context *ctx) {
@@ -106,15 +115,19 @@ void sync_surface_data(State &state, Context *ctx) {
 }
 
 bool create_context(State &state, std::unique_ptr<Context> &context) {
-    return renderer::send_single_command(state, nullptr, renderer::CommandOpcode::CreateContext, &context);
+    return renderer::send_single_command(state, nullptr, renderer::CommandOpcode::CreateContext, true, &context);
+}
+
+void destroy_context(State &state, std::unique_ptr<Context> &context) {
+    renderer::send_single_command(state, nullptr, renderer::CommandOpcode::DestroyContext, true, &context);
 }
 
 bool create_render_target(State &state, std::unique_ptr<RenderTarget> &rt, const SceGxmRenderTargetParams *params) {
-    return renderer::send_single_command(state, nullptr, renderer::CommandOpcode::CreateRenderTarget, &rt, params);
+    return renderer::send_single_command(state, nullptr, renderer::CommandOpcode::CreateRenderTarget, true, &rt, params);
 }
 
 void destroy_render_target(State &state, std::unique_ptr<RenderTarget> &rt) {
-    renderer::send_single_command(state, nullptr, renderer::CommandOpcode::DestroyRenderTarget, &rt);
+    renderer::send_single_command(state, nullptr, renderer::CommandOpcode::DestroyRenderTarget, true, &rt);
 }
 
 void set_uniform(State &state, Context *ctx, const bool is_vertex_uniform, const SceGxmProgramParameter *parameter, const void *data) {
@@ -128,4 +141,5 @@ std::uint8_t **set_uniform_buffer(State &state, Context *ctx, const bool is_vert
     renderer::add_state_set_command(ctx, renderer::GXMState::UniformBuffer, nullptr, is_vertex_uniform, block_number, bytes_to_copy_and_pad);
     return reinterpret_cast<std::uint8_t **>(ctx->command_list.last->data + 2);
 }
+
 } // namespace renderer

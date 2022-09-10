@@ -57,11 +57,13 @@ public:
     spv::Id out;
 
     // Contains repeat increasement offset
-    int repeat_increase[4][4];
+    int repeat_increase[4][17];
     int repeat_multiplier[4];
 
     void do_texture_queries(const NonDependentTextureQueryCallInfos &texture_queries);
-    spv::Id do_fetch_texture(const spv::Id tex, const Coord &coord, const DataType dest_type, const spv::Id lod = spv::NoResult);
+    // extra1 is either lod or ddx, extra2 is ddy
+    spv::Id do_fetch_texture(const spv::Id tex, const Coord &coord, const DataType dest_type, const int lod_mode,
+        const spv::Id extra1 = spv::NoResult, const spv::Id extra2 = spv::NoResult, const int gather4_comp = -1);
 
     USSETranslatorVisitor() = delete;
     explicit USSETranslatorVisitor(spv::Builder &_b, USSERecompiler &_recompiler, const SceGxmProgram &program, const FeatureState &features,
@@ -188,7 +190,7 @@ private:
 
     void reset_repeat_increase() {
         for (int i = 0; i < 4; i++) {
-            for (int j = 0; j < 4; j++) {
+            for (int j = 0; j < 17; j++) {
                 repeat_increase[i][j] = j;
             }
         }
@@ -613,7 +615,30 @@ public:
         Imm7 src1_num,
         Imm7 src2_num);
 
-    bool i16mad();
+    bool i16mad(ShortPredicate pred,
+        Imm1 abs,
+        bool skipinv,
+        bool nosched,
+        Imm1 src2_neg,
+        Imm1 sel1h_upper8,
+        Imm1 dest_bank_ext,
+        Imm1 end,
+        Imm1 src1_bank_ext,
+        Imm1 src2_bank_ext,
+        RepeatCount repeat_count,
+        Imm2 mode,
+        Imm2 src2_format,
+        Imm2 src1_format,
+        Imm1 sel2h_upper8,
+        Imm2 or_shift,
+        Imm1 src0_bank,
+        Imm2 dest_bank,
+        Imm2 src1_bank,
+        Imm2 src2_bank,
+        Imm7 dest_n,
+        Imm7 src0_n,
+        Imm7 src1_n,
+        Imm7 src2_n);
 
     bool i32mad(ShortPredicate pred,
         Imm1 src0_high,
@@ -814,7 +839,8 @@ struct USSERecompiler final {
     USSEBlockNode tree_block_node;
 
     explicit USSERecompiler(spv::Builder &b, const SceGxmProgram &program, const FeatureState &features,
-        const SpirvShaderParameters &parameters, utils::SpirvUtilFunctions &utils, spv::Function *end_hook_func, const NonDependentTextureQueryCallInfos &queries);
+        const SpirvShaderParameters &parameters, utils::SpirvUtilFunctions &utils, spv::Function *end_hook_func,
+        const NonDependentTextureQueryCallInfos &queries, const spv::Id render_info_id);
 
     void reset(const std::uint64_t *inst, const std::size_t count);
 

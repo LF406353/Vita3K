@@ -18,16 +18,26 @@
 		</configuration>
 		<controls name="Commandes">
 			<keyboard_controls>Commandes du Clavier</keyboard_controls>
-			<controllers>Contrôleurs</controllers>
 		</controls>
 		<help name="Aide">
-			<about>À Propos</about>
 			<welcome>Bienvenue</welcome>
 		</help>
 	</main_menubar>
 
+	<about name="À Propos">
+		<vita3k>Vita3K: a PS Vita/PS TV Emulator. The world's first functional PS Vita/PS TV emulator.</vita3k>
+		<about_vita3k>Vita3K is an experimental open-source PlayStation Vita/PlayStation TV emulator written in C++ for Windows and Linux operating systems.</about_vita3k>
+		<note>Note: The emulator is still in a very early stage of development.</note>
+		<github_website>If you're interested in contributing, check out our GitHub:</github_website>
+		<vita3k_website>Visit our website for more info:</vita3k_website>
+		<vita3k_staff>Vita3K Staff</vita3k_staff>
+		<developers>Developers</developers>
+		<contributors>Contributors</contributors>
+	</about>
+
 	<app_context>
 		<update_history>Historique de mise à jour</update_history>
+		<history_version>Version {}</history_version>
 		<information>Informations</information>
 		<app_delete>Cette application et toutes les données associées, y compris les données sauvegardées, vont être supprimées.</app_delete>
 		<save_delete>Supprimer ces données sauvegardées ?</save_delete>
@@ -91,6 +101,74 @@
 			<month>novembre</month>
 			<month>décembre</month>
 		</small_ymonth>
+		<mday>
+			<days></days>
+			<days>1</days>
+			<days>2</days>
+			<days>3</days>
+			<days>4</days>
+			<days>5</days>
+			<days>6</days>
+			<days>7</days>
+			<days>8</days>
+			<days>9</days>
+			<days>10</days>
+			<days>11</days>
+			<days>12</days>
+			<days>13</days>
+			<days>14</days>
+			<days>15</days>
+			<days>16</days>
+			<days>17</days>
+			<days>18</days>
+			<days>19</days>
+			<days>20</days>
+			<days>21</days>
+			<days>22</days>
+			<days>23</days>
+			<days>24</days>
+			<days>25</days>
+			<days>26</days>
+			<days>27</days>
+			<days>28</days>
+			<days>29</days>
+			<days>30</days>
+			<days>31</days>
+		</mday>
+		<small_mday>
+			<days></days>
+			<days>1</days>
+			<days>2</days>
+			<days>3</days>
+			<days>4</days>
+			<days>5</days>
+			<days>6</days>
+			<days>7</days>
+			<days>8</days>
+			<days>9</days>
+			<days>10</days>
+			<days>11</days>
+			<days>12</days>
+			<days>13</days>
+			<days>14</days>
+			<days>15</days>
+			<days>16</days>
+			<days>17</days>
+			<days>18</days>
+			<days>19</days>
+			<days>20</days>
+			<days>21</days>
+			<days>22</days>
+			<days>23</days>
+			<days>24</days>
+			<days>25</days>
+			<days>26</days>
+			<days>27</days>
+			<days>28</days>
+			<days>29</days>
+			<days>30</days>
+			<days>31</days>
+		</small_mday>
 		<hidden_trophy>Trophée masqué</hidden_trophy>
 		<one_hour_ago>Il y a 1 heure</one_hour_ago>
 		<one_minute_ago>Il y a 1 minute</one_minute_ago>
@@ -101,6 +179,28 @@
 		<hours_ago>Il y a {} heures</hours_ago>
 		<minutes_ago>Il y a {} minutes</minutes_ago>
 	</common>
+
+	<content_manager name="Gestionnaire de contenu">
+		<application name="Applications">
+			<delete>Les applications sélectionnées et toutes les données associées, y compris les données sauvegardées, vont être supprimées.</delete>
+			<no_item>Aucun élément de contenu.</no_item>
+		</application>
+		<saved_data name="Données sauvegardées">
+			<delete>Les données sauvegardées sélectionnées vont être supprimées.</delete>
+			<no_saved_data>Aucune données sauvegardées.</no_saved_data>
+		</saved_data>
+		<theme>Thème</theme>
+		<free_space>Espace libre</free_space>
+		<clear_all>Décocher tout</clear_all>
+	</content_manager>
+
+	<controllers name="Contrôleurs">
+		<connected>Controllers connected</connected>
+		<name>Nom</name>
+		<num>Num</num>
+		<not_connected>No compatible controllers connected.
+Connect a controller that is compatible with SDL2.</not_connected>
+	</controllers>
 
 	<dialog>
 		<trophy>
@@ -141,6 +241,7 @@ Ne pas éteindre le système, ni fermer l'application.</warning_saving>
 
 	<game_data>
 		<app_close>L'application suivante va être fermée.</app_close>
+		<data_delete>Données à supprimer :</data_delete>
 	</game_data>
 
 	<indicator>
@@ -171,6 +272,7 @@ Votre système Vita3K est prêt !</completed_setup>
 		<theme_background name="Thème et Arrière-plan">
 			<default>Par défaut</default>
 			<theme name="Thème">
+				<find_in_altervista>Trouver dans Altervista</find_in_altervista>
 				<information name="Informations">
 					<name>Nom</name>
 					<provider>Prestataire</provider>
@@ -183,7 +285,10 @@ Votre système Vita3K est prêt !</completed_setup>
 			<start_screen name="Écran de démarrage">
 				<image>Image</image>
 			</start_screen>
-			<home_screen_backgrounds>Arrière-plans d'écran d'accueil</home_screen_backgrounds>
+			<home_screen_backgrounds name="Arrière-plans d'écran d'accueil">
+				<delete_background>Delete Background</delete_background>
+				<add_background>Add Background</add_background>
+			</home_screen_backgrounds>
 		</theme_background>
 		<date_time name="Date et heure">
 			<date_format name ="Affichage de la date">
@@ -200,7 +305,7 @@ Votre système Vita3K est prêt !</completed_setup>
 			<system_language>Langue système</system_language>
 			<input_language name="Langue de saisie">
 				<keyboards name="Claviers">
-					<ime_langagues>
+					<ime_languages>
 						<lang id="1">Danois</lang>
 						<lang id="2">Allemand</lang>
 						<lang id="262144">Anglais (Royaume-Uni)</lang>
@@ -217,7 +322,7 @@ Votre système Vita3K est prêt !</completed_setup>
 						<lang id="2048">Finnois</lang>
 						<lang id="4096">Suédois</lang>
 						<lang id="524288">Turc</lang>
-					</ime_langagues>
+					</ime_languages>
 				</keyboards>
 			</input_language>
 		</language>
@@ -239,12 +344,38 @@ Pour obtenir des trophées, utilisez une application compatible avec cette fonct
 	</trophy_collection>
 
 	<user_management>
+		<select_user>Select your user</select_user>
 		<create_user>Créer un utilisateur</create_user>
+		<user_created>L'utilisateur suivant a été créés :</user_created>
 		<edit_user>Modifier un utilisateur</edit_user>
+		<user_name_used>! Ce nom est déjà utilisé.</user_name_used>
 		<delete_user>Supprimer un utilisateur</delete_user>
+		<user_delete>Sélectionnez l'utilisateur que vous souhaitez supprimer.</user_delete>
+		<user_delete_msg>L'utilisateur suivant va être supprimé.</user_delete_msg>
+		<user_delete_message>Si vous supprimez cet utilisateur, toutes ses données, trophées seront supprimés.</user_delete_message>
+		<user_delete_warn>L'utilisateur va être supprimé.
+Voulez-vous vraiment continuer?</user_delete_warn>
+		<user_deleted>Utilisateur supprimé.</user_deleted>
 		<change_avatar>Changer d'avatar</change_avatar>
+		<reset_avatar>Reset Avatar</reset_avatar>
 		<name>Nom</name>
 		<user>Utilisateur</user>
 		<confirm>Confirmer</confirm>
+		<automatic_user_login>Automatic User Login</automatic_user_login>
 	</user_management>
+
+	<vita3k_update name="Mise à jour Vita3K">
+ 		<new_version_available>Une nouvelle version de Vita3K est disponible.</new_version_available>
+		<back>Précédent</back>
+		<downloading>Téléchargement en cours...
+Une fois le téléchargement terminé, Vita3K redémarrera automatiquement et installera le nouveau Vita3K.</downloading>
+		<not_complete_update>La mise à jour n'a pas pu être terminée.</not_complete_update>
+		<next>Suivant</next>
+		<update_vita3k>Mettre à jour Vita3K ?</update_vita3k>
+		<later_version_already_installed>Une version plus récente de Vita3K est déjà installée.</later_version_already_installed>
+		<latest_version_already_installed>La dernière version de Vita3K est déjà installée.</latest_version_already_installed>
+		<new_features>Nouveautés de la version {}</new_features>
+		<update>Mettre à jour</update>
+		<version>Version {}</version>
+	</vita3k_update>
 </lang>

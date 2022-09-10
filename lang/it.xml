@@ -20,13 +20,24 @@
 			<keyboard_controls>Controlli della Tastiera</keyboard_controls>
 		</controls>
 		<help name="Aiuto">
-			<about>A Proposito</about>
 			<welcome>Benvevuto</welcome>
 		</help>
 	</main_menubar>
 
+	<about name="A Proposito">
+		<vita3k>Vita3K: a PS Vita/PS TV Emulator. The world's first functional PS Vita/PS TV emulator.</vita3k>
+		<about_vita3k>Vita3K is an experimental open-source PlayStation Vita/PlayStation TV emulator written in C++ for Windows and Linux operating systems.</about_vita3k>
+		<note>Note: The emulator is still in a very early stage of development.</note>
+		<github_website>If you're interested in contributing, check out our GitHub:</github_website>
+		<vita3k_website>Visit our website for more info:</vita3k_website>
+		<vita3k_staff>Vita3K Staff</vita3k_staff>
+		<developers>Developers</developers>
+		<contributors>Contributors</contributors>
+	</about>
+
 	<app_context>
 		<update_history>Cronologia degli aggiornamenti</update_history>
+		<history_version>Versione {}</history_version>
 		<information>Informazioni</information>
 		<app_delete>Questa applicazione e tutti i dati correlati, inclusi i dati salvati, saranno eliminati.</app_delete>
 		<save_delete>Vuoi eliminare questi dati salvati?</save_delete>
@@ -90,6 +101,74 @@
 			<month>novembre</month>
 			<month>dicembre</month>
 		</small_ymonth>
+		<mday>
+			<days></days>
+			<days>1</days>
+			<days>2</days>
+			<days>3</days>
+			<days>4</days>
+			<days>5</days>
+			<days>6</days>
+			<days>7</days>
+			<days>8</days>
+			<days>9</days>
+			<days>10</days>
+			<days>11</days>
+			<days>12</days>
+			<days>13</days>
+			<days>14</days>
+			<days>15</days>
+			<days>16</days>
+			<days>17</days>
+			<days>18</days>
+			<days>19</days>
+			<days>20</days>
+			<days>21</days>
+			<days>22</days>
+			<days>23</days>
+			<days>24</days>
+			<days>25</days>
+			<days>26</days>
+			<days>27</days>
+			<days>28</days>
+			<days>29</days>
+			<days>30</days>
+			<days>31</days>
+		</mday>
+		<small_mday>
+			<days></days>
+			<days>1</days>
+			<days>2</days>
+			<days>3</days>
+			<days>4</days>
+			<days>5</days>
+			<days>6</days>
+			<days>7</days>
+			<days>8</days>
+			<days>9</days>
+			<days>10</days>
+			<days>11</days>
+			<days>12</days>
+			<days>13</days>
+			<days>14</days>
+			<days>15</days>
+			<days>16</days>
+			<days>17</days>
+			<days>18</days>
+			<days>19</days>
+			<days>20</days>
+			<days>21</days>
+			<days>22</days>
+			<days>23</days>
+			<days>24</days>
+			<days>25</days>
+			<days>26</days>
+			<days>27</days>
+			<days>28</days>
+			<days>29</days>
+			<days>30</days>
+			<days>31</days>
+		</small_mday>
 		<hidden_trophy>Trofeo nascosto</hidden_trophy>
 		<one_hour_ago>1 ora fa</one_hour_ago>
 		<one_minute_ago>1 minuto fa</one_minute_ago>
@@ -100,6 +179,20 @@
 		<hours_ago>{} ore fa</hours_ago>
 		<minutes_ago>{} minuti fa</minutes_ago>
 	</common>
+
+	<content_manager name="Gestione contenuto">
+		<application name="Applicazioni">
+			<delete>Le applicazioni selezionate e tutti i dati correlati, inclusi i dati salvati, saranno eliminati.</delete>
+			<no_item>Nessun elemento di contenuto.</no_item>
+		</application>
+		<saved_data name="Dati salvati">
+			<delete>I dati salvati selezionati saranno eliminati.</delete>
+			<no_saved_data>Non ci sono dati salvati.</no_saved_data>
+		</saved_data>
+		<theme>Tema</theme>
+		<free_space>Spazio libero</free_space>
+		<clear_all>Cancella tutto</clear_all>
+	</content_manager>
 
 	<dialog>
 		<trophy>
@@ -140,6 +233,7 @@ Non spegnere il sistema né chiudere l'applicazione.</warning_saving>
 
 	<game_data>
 		<app_close>La seguente applicazione sarà chiusa.</app_close>
+		<data_delete>Dati da eliminare:</data_delete>
 	</game_data>
 
 	<indicator>
@@ -166,6 +260,66 @@ Il tuo sistema Vita3K è pronto per l'uso!</completed_setup>
 		<continue>Continua</continue>
 	</live_area>
 
+	<settings name="Impostazioni">
+		<theme_background name="Tema e Sfondo">
+			<default>Predefinita</default>
+			<theme name="Tema">
+				<find_in_altervista>Trova in Altervista</find_in_altervista>
+				<information name="Informazioni">
+					<name>Nome</name>
+					<provider>Fornitore</provider>
+					<updated>Aggiornato</updated>
+					<size>Dimensione</size>
+					<version>Versione</version>
+				</information>
+				<delete>Questo tema sarà eliminato.</delete>
+			</theme>
+			<start_screen name="Schermata iniziale">
+				<image>Immagine</image>
+			</start_screen>
+			<home_screen_backgrounds name="Sfondi schermata principale">
+				<delete_background>Delete Background</delete_background>
+				<add_background>Add Background</add_background>
+			</home_screen_backgrounds>
+		</theme_background>
+		<date_time name="Date e ora">
+			<date_format name ="Formato della data">
+				<yyyy_mm_dd>AAAA/MM/GG</yyyy_mm_dd>
+				<dd_mm_yyyy>GG/MM/AAAA</dd_mm_yyyy>
+				<mm_dd_yyyy>MM/GG/AAAA</mm_dd_yyyy>
+			</date_format>
+			<time_format name="Formato dell'ora">
+				<clock_12_hour>12 ore</clock_12_hour>
+				<clock_24_hour>24 ore</clock_24_hour>
+			</time_format>
+		</date_time>
+		<language name="Lingua">
+			<system_language>Lingua del sistema</system_language>
+			<input_language name="Lingua di immissione dati">
+				<keyboards name="Tastiere">
+					<ime_languages>
+						<lang id="1">Danese</lang>
+						<lang id="2">Tedesco</lang>
+						<lang id="262144">Inglese (Regno Unito)</lang>
+						<lang id="4">Inglese (Stati Uniti)</lang>
+						<lang id="8">Spagnolo</lang>
+						<lang id="16">Francese</lang>
+						<lang id="32">Italiano</lang>
+						<lang id="64">Olandese</lang>
+						<lang id="128">Norvegese</lang>
+						<lang id="256">Polacco</lang>
+						<lang id="131072">Portoghese (Brasile)</lang>
+						<lang id="512">Portoghese (Portogallo)</lang>
+						<lang id="1024">Russo</lang>
+						<lang id="2048">Finlandese</lang>
+						<lang id="4096">Svedese</lang>
+						<lang id="524288">Turco</lang>
+					</ime_languages>
+				</keyboards>
+			</input_language>
+		</language>
+	</settings>
+
 	<trophy_collection>
 		<details>Dettagli</details>
 		<earned>Guadagnato</earned>
@@ -182,12 +336,23 @@ Puoi guadagnare trofei usando un'applicazione che supporta questa funzione.</no_
 	</trophy_collection>
 
 	<user_management>
+		<select_user>Select your user</select_user>
 		<create_user>Crea utente</create_user>
+		<user_created>L'utente seguente è stato creato:</user_created>
 		<edit_user>Modifica utente</edit_user>
+		<user_name_used>Il nome utente è già in uso.</user_name_used>
 		<delete_user>Elimina utente</delete_user>
+		<user_delete>Seleziona l'utente che vuoi eliminare.</user_delete>
+		<user_delete_msg>Il seguente utenti verrà eliminato:</user_delete_msg>
+		<user_delete_message>Se elimini l'utente, i dati salvati, le trofei dell'utente saranno eliminati.</user_delete_message>
+		<user_delete_warn>L'utente serà eliminato.
+Vuoi davvero continuare?</user_delete_warn>
+		<user_deleted>Utente eliminato.</user_deleted>
 		<change_avatar>Cambia avatar</change_avatar>
+		<reset_avatar>Reset Avatar</reset_avatar>
 		<name>Nome</name>
 		<user>Utente</user>
 		<confirm>Conferma</confirm>
+		<automatic_user_login>Automatic User Login</automatic_user_login>
 	</user_management>
 </lang>

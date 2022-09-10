@@ -265,7 +265,7 @@ we can have 3 cases
 2b we can't include and use F16C intrinsic - use basic conversion
 msvc allow to include any intrinsic independent of architecture flags, other compilers disallow this
 */
-#if (defined(__AVX__) && defined(__F16C__)) || defined(__AVX2__) || defined(_MSC_VER)
+#if (defined(__AVX__) && defined(__F16C__)) || defined(__AVX2__) || (defined(_MSC_VER) && !defined(__clang__))
 #include <immintrin.h>
 void float_to_half_AVX_F16C(const float *src, std::uint16_t *dest, const int total) {
     float toconvert[8] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
@@ -299,7 +299,7 @@ void float_to_half_basic(const float *src, std::uint16_t *dest, const int total)
         dest[i] = util::encode_flt16(src[i]);
     }
 }
-#if defined(_MSC_VER)
+#if (defined(_MSC_VER) && !defined(__clang__))
 // check and use AVX+F16C instruction set if possible
 
 // use function variable as imitation of self-modifying code.
@@ -332,7 +332,7 @@ void float_to_half(const float *src, std::uint16_t *dest, const int total) {
 
 // pent0 found on stackoverflow
 // https://stackoverflow.com/questions/4398711/round-to-the-nearest-power-of-two/4398799
-std::uint32_t nearest_power_of_two(std::uint32_t num) {
+std::uint32_t next_power_of_two(std::uint32_t num) {
     num--;
     num |= num >> 1;
     num |= num >> 2;

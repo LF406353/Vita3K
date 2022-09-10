@@ -24,7 +24,12 @@
 #include <np/state.h>
 
 #include <imgui.h>
+// Disable warninig here is needed to compile on windows because we
+// are turning some warnings into errors to allow makepkg default flags
+#pragma warning(push)
+#pragma warning(disable : 4774)
 #include <imgui_memory_editor.h>
+#pragma warning(pop)
 
 #include <gui/imgui_impl_sdl_state.h>
 
@@ -39,7 +44,7 @@
 #include <vector>
 
 struct GuiState;
-struct HostState;
+struct EmuEnvState;
 
 namespace gui {
 
@@ -100,7 +105,7 @@ struct IconAsyncLoader {
 
     void commit(GuiState &gui);
 
-    IconAsyncLoader(GuiState &gui, HostState &host, const std::vector<gui::App> &app_list);
+    IconAsyncLoader(GuiState &gui, EmuEnvState &emuenv, const std::vector<gui::App> &app_list);
     ~IconAsyncLoader();
 };
 
@@ -120,8 +125,8 @@ struct AppsSelector {
 struct LiveAreaState {
     bool app_close = false;
     bool app_information = false;
-    bool app_selector = false;
     bool content_manager = false;
+    bool home_screen = false;
     bool information_bar = false;
     bool live_area_screen = false;
     bool manual = false;
@@ -164,6 +169,7 @@ struct ControlMenuState {
 
 struct HelpMenuState {
     bool about_dialog = false;
+    bool vita3k_update = false;
     bool welcome_dialog = false;
 };
 
@@ -250,19 +256,19 @@ const std::vector<std::pair<SceSystemParamLang, std::string>> LIST_SYS_LANG = {
     { SCE_SYSTEM_PARAM_LANG_GERMAN, "Deutsch" },
     { SCE_SYSTEM_PARAM_LANG_ENGLISH_GB, "English (United Kingdom)" },
     { SCE_SYSTEM_PARAM_LANG_ENGLISH_US, "English (United States)" },
-    { SCE_SYSTEM_PARAM_LANG_SPANISH, u8"Español" },
-    { SCE_SYSTEM_PARAM_LANG_FRENCH, u8"Français" },
+    { SCE_SYSTEM_PARAM_LANG_SPANISH, reinterpret_cast<const char *>(u8"Español") },
+    { SCE_SYSTEM_PARAM_LANG_FRENCH, reinterpret_cast<const char *>(u8"Français") },
     { SCE_SYSTEM_PARAM_LANG_ITALIAN, "Italiano" },
     { SCE_SYSTEM_PARAM_LANG_DUTCH, "Nederlands" },
     { SCE_SYSTEM_PARAM_LANG_NORWEGIAN, "Norsk" },
     { SCE_SYSTEM_PARAM_LANG_POLISH, "Polskis" },
-    { SCE_SYSTEM_PARAM_LANG_PORTUGUESE_BR, u8"Português (Brasil)" },
-    { SCE_SYSTEM_PARAM_LANG_PORTUGUESE_PT, u8"Português (Portugal)" },
-    { SCE_SYSTEM_PARAM_LANG_RUSSIAN, u8"Русский" },
+    { SCE_SYSTEM_PARAM_LANG_PORTUGUESE_BR, reinterpret_cast<const char *>(u8"Português (Brasil)") },
+    { SCE_SYSTEM_PARAM_LANG_PORTUGUESE_PT, reinterpret_cast<const char *>(u8"Português (Portugal)") },
+    { SCE_SYSTEM_PARAM_LANG_RUSSIAN, reinterpret_cast<const char *>(u8"Русский") },
     { SCE_SYSTEM_PARAM_LANG_FINNISH, "Suomi" },
     { SCE_SYSTEM_PARAM_LANG_SWEDISH, "Svenska" },
-    { SCE_SYSTEM_PARAM_LANG_TURKISH, u8"Türkçe" },
-    { SCE_SYSTEM_PARAM_LANG_JAPANESE, u8"日本語" },
+    { SCE_SYSTEM_PARAM_LANG_TURKISH, reinterpret_cast<const char *>(u8"Türkçe") },
+    { SCE_SYSTEM_PARAM_LANG_JAPANESE, reinterpret_cast<const char *>(u8"日本語") },
     { SCE_SYSTEM_PARAM_LANG_KOREAN, "Korean" },
     { SCE_SYSTEM_PARAM_LANG_CHINESE_S, "Chinese - Simplified" },
     { SCE_SYSTEM_PARAM_LANG_CHINESE_T, "Chinese - Traditional" },
@@ -291,7 +297,10 @@ struct GuiState {
     size_t memory_editor_count = 0;
 
     std::string disassembly_arch = "THUMB";
-    char disassembly_address[9] = "00000000";
+
+    // Original size of disassembly_address was 9.
+    // Changed to 12 due to critical GitHub CodeQL alert.
+    char disassembly_address[12] = "00000000";
     char disassembly_count[5] = "100";
     std::vector<std::string> disassembly;
 

@@ -16,57 +16,59 @@
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 #include "SceAudio.h"
+#include "SceAudio_tracy.h"
+#include "Tracy.hpp"
 
+#include <audio/state.h>
+#include <kernel/state.h>
 #include <util/lock_and_find.h>
 
-enum SceAudioOutMode {
-    SCE_AUDIO_OUT_MODE_MONO = 0,
-    SCE_AUDIO_OUT_MODE_STEREO = 1
-};
+EXPORT(int, sceAudioOutGetAdopt, SceAudioOutPortType type) {
+#ifdef TRACY_ENABLE
+    // --- Tracy logging --- START
+    bool _tracy_activation_state = config::is_tracy_advanced_profiling_active_for_module(emuenv.cfg.tracy_advanced_profiling_modules, tracy_module_name);
+    ZoneNamedN(___tracy_scoped_zone, "sceAudioOutGetAdopt", _tracy_activation_state);
+    tracy_sceAudioOutGetAdopt(&___tracy_scoped_zone, _tracy_activation_state, type);
+    // --- Tracy logging --- END
+#endif
 
-enum SceAudioOutPortType {
-    //! Used for main audio output, freq must be set to 48000 Hz
-    SCE_AUDIO_OUT_PORT_TYPE_MAIN = 0,
-    //! Used for Background Music port
-    SCE_AUDIO_OUT_PORT_TYPE_BGM = 1,
-    //! Used for voice chat port
-    SCE_AUDIO_OUT_PORT_TYPE_VOICE = 2
-};
-
-enum SceAudioOutErrorCode {
-    SCE_AUDIO_OUT_ERROR_NOT_OPENED = 0x80260001,
-    SCE_AUDIO_OUT_ERROR_BUSY = 0x80260002,
-    SCE_AUDIO_OUT_ERROR_INVALID_PORT = 0x80260003,
-    SCE_AUDIO_OUT_ERROR_INVALID_POINTER = 0x80260004,
-    SCE_AUDIO_OUT_ERROR_PORT_FULL = 0x80260005,
-    SCE_AUDIO_OUT_ERROR_INVALID_SIZE = 0x80260006,
-    SCE_AUDIO_OUT_ERROR_INVALID_FORMAT = 0x80260007,
-    SCE_AUDIO_OUT_ERROR_INVALID_SAMPLE_FREQ = 0x80260008,
-    SCE_AUDIO_OUT_ERROR_INVALID_VOLUME = 0x80260009,
-    SCE_AUDIO_OUT_ERROR_INVALID_PORT_TYPE = 0x8026000A,
-    SCE_AUDIO_OUT_ERROR_INVALID_FX_TYPE = 0x8026000B,
-    SCE_AUDIO_OUT_ERROR_INVALID_CONF_TYPE = 0x8026000C,
-    SCE_AUDIO_OUT_ERROR_OUT_OF_MEMORY = 0x8026000D
-};
-
-enum SceAudioOutChannelFlag {
-    SCE_AUDIO_VOLUME_FLAG_L_CH = 1, //!< Left Channel
-    SCE_AUDIO_VOLUME_FLAG_R_CH = 2 //!< Right Channel
-};
-
-EXPORT(int, sceAudioOutGetAdopt) {
-    return UNIMPLEMENTED();
+    // this is used in case the vita is using voice chat, not useful for us
+    // all types of audio ports are always enabled
+    return 1;
 }
 
-EXPORT(int, sceAudioOutGetConfig) {
+EXPORT(int, sceAudioOutGetConfig, int port, SceAudioOutConfigType type) {
+#ifdef TRACY_ENABLE
+    // --- Tracy logging --- START
+    bool _tracy_activation_state = config::is_tracy_advanced_profiling_active_for_module(emuenv.cfg.tracy_advanced_profiling_modules, tracy_module_name);
+    ZoneNamedN(___tracy_scoped_zone, "sceAudioOutGetConfig", _tracy_activation_state);
+    tracy_sceAudioOutGetConfig(&___tracy_scoped_zone, _tracy_activation_state, port, type);
+    // --- Tracy logging --- END
+#endif
+
     return UNIMPLEMENTED();
 }
 
 EXPORT(int, sceAudioOutGetPortVolume_forUser) {
+#ifdef TRACY_ENABLE
+    // --- Tracy logging --- START
+    bool _tracy_activation_state = config::is_tracy_advanced_profiling_active_for_module(emuenv.cfg.tracy_advanced_profiling_modules, tracy_module_name);
+    ZoneNamedN(___tracy_scoped_zone, "sceAudioOutGetPortVolume_forUser", _tracy_activation_state);
+    // --- Tracy logging --- END
+#endif
+
     return UNIMPLEMENTED();
 }
 
 EXPORT(int, sceAudioOutOpenPort, SceAudioOutPortType type, int len, int freq, SceAudioOutMode mode) {
+#ifdef TRACY_ENABLE
+    // Tracy logging --- START
+    bool _tracy_activation_state = config::is_tracy_advanced_profiling_active_for_module(emuenv.cfg.tracy_advanced_profiling_modules, tracy_module_name);
+    ZoneNamedN(___tracy_scoped_zone, "sceAudioOutOpenPort", _tracy_activation_state);
+    tracy_sceAudioOutOpenPort(&___tracy_scoped_zone, _tracy_activation_state, type, len, freq, mode);
+    // Tracy logging --- END
+#endif
+
     if (type < SCE_AUDIO_OUT_PORT_TYPE_MAIN || type > SCE_AUDIO_OUT_PORT_TYPE_VOICE) {
         return RET_ERROR(SCE_AUDIO_OUT_ERROR_INVALID_PORT_TYPE);
     }
@@ -81,7 +83,7 @@ EXPORT(int, sceAudioOutOpenPort, SceAudioOutPortType type, int len, int freq, Sc
     }
 
     const int channels = (mode == SCE_AUDIO_OUT_MODE_MONO) ? 1 : 2;
-    const AudioStreamPtr stream(SDL_NewAudioStream(AUDIO_S16LSB, channels, freq, host.audio.ro.spec.format, host.audio.ro.spec.channels, host.audio.ro.spec.freq), SDL_FreeAudioStream);
+    const AudioStreamPtr stream(SDL_NewAudioStream(AUDIO_S16LSB, channels, freq, emuenv.audio.ro.spec.format, emuenv.audio.ro.spec.channels, emuenv.audio.ro.spec.freq), SDL_FreeAudioStream);
     if (!stream) {
         return RET_ERROR(SCE_AUDIO_OUT_ERROR_NOT_OPENED);
     }
@@ -90,20 +92,28 @@ EXPORT(int, sceAudioOutOpenPort, SceAudioOutPortType type, int len, int freq, Sc
     port->ro.len_bytes = len * channels * sizeof(int16_t);
     port->shared.stream = stream;
 
-    const std::lock_guard<std::mutex> lock(host.audio.shared.mutex);
-    const int port_id = host.audio.shared.next_port_id++;
-    host.audio.shared.out_ports.emplace(port_id, port);
+    const std::lock_guard<std::mutex> lock(emuenv.audio.shared.mutex);
+    const int port_id = emuenv.audio.shared.next_port_id++;
+    emuenv.audio.shared.out_ports.emplace(port_id, port);
 
     return port_id;
 }
 
 EXPORT(int, sceAudioOutOutput, int port, const void *buf) {
-    const AudioOutPortPtr prt = lock_and_find(port, host.audio.shared.out_ports, host.audio.shared.mutex);
+#ifdef TRACY_ENABLE
+    // --- Tracy logging --- START
+    bool _tracy_activation_state = config::is_tracy_advanced_profiling_active_for_module(emuenv.cfg.tracy_advanced_profiling_modules, tracy_module_name);
+    ZoneNamedN(___tracy_scoped_zone, "sceAudioOutOutput", _tracy_activation_state);
+    tracy_sceAudioOutOutput(&___tracy_scoped_zone, _tracy_activation_state, port);
+    // --- Tracy logging --- END
+#endif
+
+    const AudioOutPortPtr prt = lock_and_find(port, emuenv.audio.shared.out_ports, emuenv.audio.shared.mutex);
     if (!prt) {
         return RET_ERROR(SCE_AUDIO_OUT_ERROR_INVALID_PORT);
     }
 
-    const ThreadStatePtr thread = lock_and_find(thread_id, host.kernel.threads, host.kernel.mutex);
+    const ThreadStatePtr thread = lock_and_find(thread_id, emuenv.kernel.threads, emuenv.kernel.mutex);
     if (!thread) {
         return RET_ERROR(SCE_AUDIO_OUT_ERROR_INVALID_PORT);
     }
@@ -115,65 +125,167 @@ EXPORT(int, sceAudioOutOutput, int port, const void *buf) {
 
     // If there's lots of audio left to play, stop this thread.
     // The audio callback will wake it up later when it's running out of data.
-    if (available > host.audio.ro.spec.size) {
+    // the 3*emuenv.audio.ro.spec.size is needed for some games with an 480 host audiobuffer
+    // sample size (what SDL audio gives us) to make sure this does not happen
+    // we are supposed to wait for the existing samples to be processed (except the ones just passed)
+    // but this would give a bad audio because the host buffer size is different compared to the guest buffer size
+    // so we need to cache more data to make sure we always have enough
+    if (available >= 3 * emuenv.audio.ro.spec.size) {
         prt->shared.thread = thread_id;
-        lock.unlock();
 
         std::unique_lock<std::mutex> mlock(thread->mutex);
-        if (thread->status != ThreadStatus::run)
-            return 0;
-        thread->status = ThreadStatus::wait;
+        thread->update_status(ThreadStatus::wait);
+        lock.unlock();
         thread->status_cond.wait(mlock, [&]() { return thread->status == ThreadStatus::run; });
     }
 
     return 0;
 }
 
-EXPORT(int, sceAudioOutGetRestSample) {
-    return UNIMPLEMENTED();
+EXPORT(int, sceAudioOutGetRestSample, int port) {
+#ifdef TRACY_ENABLE
+    // --- Tracy logging --- START
+    bool _tracy_activation_state = config::is_tracy_advanced_profiling_active_for_module(emuenv.cfg.tracy_advanced_profiling_modules, tracy_module_name);
+    ZoneNamedN(___tracy_scoped_zone, "sceAudioOutGetRestSample", _tracy_activation_state);
+    tracy_sceAudioOutGetRestSample(&___tracy_scoped_zone, _tracy_activation_state, port);
+    // --- Tracy logging --- END
+#endif
+
+    const AudioOutPortPtr prt = lock_and_find(port, emuenv.audio.shared.out_ports, emuenv.audio.shared.mutex);
+    if (!prt) {
+        return RET_ERROR(SCE_AUDIO_OUT_ERROR_INVALID_PORT);
+    }
+
+    const int bytes_available = SDL_AudioStreamAvailable(prt->shared.stream.get());
+    assert(emuenv.audio.ro.spec.format == AUDIO_S16LSB);
+
+    // we have the number of bytes left, we can convert it back to the number of samples left
+    return bytes_available / (emuenv.audio.ro.spec.channels * sizeof(int16_t));
 }
 
 EXPORT(int, sceAudioOutOpenExtPort) {
+#ifdef TRACY_ENABLE
+    // --- Tracy logging --- START
+    bool _tracy_activation_state = config::is_tracy_advanced_profiling_active_for_module(emuenv.cfg.tracy_advanced_profiling_modules, tracy_module_name);
+    ZoneNamedN(___tracy_scoped_zone, "sceAudioOutOpenExtPort", _tracy_activation_state);
+    // --- Tracy logging --- END
+#endif
+
     return UNIMPLEMENTED();
 }
 
-EXPORT(int, sceAudioOutReleasePort) {
-    return UNIMPLEMENTED();
+EXPORT(int, sceAudioOutReleasePort, int port) {
+#ifdef TRACY_ENABLE
+    // --- Tracy logging --- START
+    bool _tracy_activation_state = config::is_tracy_advanced_profiling_active_for_module(emuenv.cfg.tracy_advanced_profiling_modules, tracy_module_name);
+    ZoneNamedN(___tracy_scoped_zone, "sceAudioOutReleasePort", _tracy_activation_state);
+    tracy_sceAudioOutReleasePort(&___tracy_scoped_zone, _tracy_activation_state, port);
+    // --- Tracy logging --- END
+#endif
+
+    const std::lock_guard<std::mutex> guard(emuenv.audio.shared.mutex);
+    if (!emuenv.audio.shared.out_ports.erase(port)) {
+        return RET_ERROR(SCE_AUDIO_OUT_ERROR_INVALID_PORT);
+    }
+
+    return 0;
 }
 
 EXPORT(int, sceAudioOutSetAdoptMode) {
+#ifdef TRACY_ENABLE
+    // --- Tracy logging --- START
+    bool _tracy_activation_state = config::is_tracy_advanced_profiling_active_for_module(emuenv.cfg.tracy_advanced_profiling_modules, tracy_module_name);
+    ZoneNamedN(___tracy_scoped_zone, "sceAudioOutSetAdoptMode", _tracy_activation_state);
+    // --- Tracy logging --- END
+#endif
+
     return UNIMPLEMENTED();
 }
 
 EXPORT(int, sceAudioOutSetAdopt_forUser) {
+#ifdef TRACY_ENABLE
+    // --- Tracy logging --- START
+    bool _tracy_activation_state = config::is_tracy_advanced_profiling_active_for_module(emuenv.cfg.tracy_advanced_profiling_modules, tracy_module_name);
+    ZoneNamedN(___tracy_scoped_zone, "sceAudioOutSetAdopt_forUser", _tracy_activation_state);
+    // --- Tracy logging --- END
+#endif
+
     return UNIMPLEMENTED();
 }
 
-EXPORT(int, sceAudioOutSetAlcMode) {
+EXPORT(int, sceAudioOutSetAlcMode, SceAudioOutAlcMode mode) {
+#ifdef TRACY_ENABLE
+    // --- Tracy logging --- START
+    bool _tracy_activation_state = config::is_tracy_advanced_profiling_active_for_module(emuenv.cfg.tracy_advanced_profiling_modules, tracy_module_name);
+    ZoneNamedN(___tracy_scoped_zone, "sceAudioOutSetAlcMode", _tracy_activation_state);
+    tracy_sceAudioOutSetAlcMode(&___tracy_scoped_zone, _tracy_activation_state, mode);
+    // --- Tracy logging --- END
+#endif
+
     return UNIMPLEMENTED();
 }
 
 EXPORT(int, sceAudioOutSetCompress) {
+#ifdef TRACY_ENABLE
+    // --- Tracy logging --- START
+    bool _tracy_activation_state = config::is_tracy_advanced_profiling_active_for_module(emuenv.cfg.tracy_advanced_profiling_modules, tracy_module_name);
+    ZoneNamedN(___tracy_scoped_zone, "sceAudioOutSetCompress", _tracy_activation_state);
+    // --- Tracy logging --- END
+#endif
+
     return UNIMPLEMENTED();
 }
 
-EXPORT(int, sceAudioOutSetConfig) {
+EXPORT(int, sceAudioOutSetConfig, int port, SceSize len, int freq, SceAudioOutMode mode) {
+#ifdef TRACY_ENABLE
+    // --- Tracy logging --- START
+    bool _tracy_activation_state = config::is_tracy_advanced_profiling_active_for_module(emuenv.cfg.tracy_advanced_profiling_modules, tracy_module_name);
+    ZoneNamedN(___tracy_scoped_zone, "sceAudioOutSetConfig", _tracy_activation_state);
+    tracy_sceAudioOutSetConfig(&___tracy_scoped_zone, _tracy_activation_state, port, len, freq, mode);
+#endif
+    // --- Tracy logging --- END
+
     return UNIMPLEMENTED();
 }
 
 EXPORT(int, sceAudioOutSetEffectType) {
+#ifdef TRACY_ENABLE
+    // --- Tracy logging --- START
+    bool _tracy_activation_state = config::is_tracy_advanced_profiling_active_for_module(emuenv.cfg.tracy_advanced_profiling_modules, tracy_module_name);
+    ZoneNamedN(___tracy_scoped_zone, "sceAudioOutSetEffectType", _tracy_activation_state);
+    // --- Tracy logging --- END
+#endif
+
     return UNIMPLEMENTED();
 }
 
 EXPORT(int, sceAudioOutSetPortVolume_forUser) {
+#ifdef TRACY_ENABLE
+    // --- Tracy logging --- START
+    bool _tracy_activation_state = config::is_tracy_advanced_profiling_active_for_module(emuenv.cfg.tracy_advanced_profiling_modules, tracy_module_name);
+    ZoneNamedN(___tracy_scoped_zone, "sceAudioOutSetPortVolume_forUser", _tracy_activation_state);
+    // --- Tracy logging --- END
+#endif
+
     return UNIMPLEMENTED();
 }
 
 EXPORT(int, sceAudioOutSetVolume, int port, SceAudioOutChannelFlag ch, int *vol) {
+#ifdef TRACY_ENABLE
+    // --- Tracy logging --- START
+    bool _tracy_activation_state = config::is_tracy_advanced_profiling_active_for_module(emuenv.cfg.tracy_advanced_profiling_modules, tracy_module_name);
+    ZoneNamedN(___tracy_scoped_zone, "sceAudioOutSetVolume", _tracy_activation_state);
+    tracy_sceAudioOutSetVolume(&___tracy_scoped_zone, _tracy_activation_state, port, ch, vol);
+    // --- Tracy logging --- END
+#endif
+
     if (!ch) // no channel selected, no changes
         return 0;
 
-    const AudioOutPortPtr prt = lock_and_find(port, host.audio.shared.out_ports, host.audio.shared.mutex);
+    const AudioOutPortPtr prt = lock_and_find(port, emuenv.audio.shared.out_ports, emuenv.audio.shared.mutex);
+
+    if (!prt)
+        return RET_ERROR(SCE_AUDIO_OUT_ERROR_INVALID_PORT);
 
     // Unsure of what happens if only one channel is selected, this will break if program passes a size 1 int array
     const int left = (ch & SCE_AUDIO_VOLUME_FLAG_L_CH) ? vol[0] : prt->left_channel_volume;

@@ -1,5 +1,5 @@
 // Vita3K emulator project
-// Copyright (C) 2021 Vita3K team
+// Copyright (C) 2022 Vita3K team
 //
 // This program is free software; you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -87,7 +87,7 @@ const uint16_t mpeg_frame_samples[4][4] = {
 // Slot size (MPEG unit of measurement) - use [layer]
 const uint8_t mpeg_slot_size[4] = { 0, 1, 1, 4 }; // Rsvd, 3, 2, 1
 
-uint32_t Mp3DecoderState::get_es_size(const uint8_t *data) {
+uint32_t get_mp3_data_size(const uint8_t *data) {
     // Quick validity check
     if (((data[0] & 0xFF) != 0xFF)
         || ((data[1] & 0xE0) != 0xE0) // 3 sync bits
@@ -119,6 +119,14 @@ uint32_t Mp3DecoderState::get_es_size(const uint8_t *data) {
     return static_cast<uint16_t>(fsize);
 }
 
+uint32_t Mp3DecoderState::get_es_size() {
+    return es_size_used;
+}
+
+void Mp3DecoderState::clear_context() {
+    codec->flush(context);
+}
+
 uint32_t Mp3DecoderState::get(DecoderQuery query) {
     switch (query) {
     case DecoderQuery::CHANNELS: return context->channels;
@@ -128,6 +136,12 @@ uint32_t Mp3DecoderState::get(DecoderQuery query) {
 
 bool Mp3DecoderState::send(const uint8_t *data, uint32_t size) {
     AVPacket *packet = av_packet_alloc();
+
+    es_size_used = get_mp3_data_size(data);
+    if (es_size_used != 0)
+        size = std::min(size, es_size_used);
+    else
+        es_size_used = size;
 
     std::vector<uint8_t> temporary(size + AV_INPUT_BUFFER_PADDING_SIZE);
     memcpy(temporary.data(), data, size);
@@ -176,7 +190,7 @@ bool Mp3DecoderState::receive(uint8_t *data, DecoderSize *size) {
 }
 
 Mp3DecoderState::Mp3DecoderState(uint32_t channels) {
-    AVCodec *codec = avcodec_find_decoder(AV_CODEC_ID_MP3);
+    codec = avcodec_find_decoder(AV_CODEC_ID_MP3);
     assert(codec);
 
     context = avcodec_alloc_context3(codec);

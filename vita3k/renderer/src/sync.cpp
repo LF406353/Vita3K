@@ -18,11 +18,13 @@
 #include <chrono>
 #include <gxm/types.h>
 #include <renderer/commands.h>
+#include <renderer/driver_functions.h>
 #include <renderer/state.h>
 #include <renderer/types.h>
 
-#include "driver_functions.h"
 #include <renderer/gl/functions.h>
+#include <renderer/vulkan/functions.h>
+#include <renderer/vulkan/types.h>
 
 #include <renderer/functions.h>
 #include <util/log.h>
@@ -36,22 +38,49 @@ COMMAND(handle_nop) {
 
 COMMAND(handle_signal_sync_object) {
     SceGxmSyncObject *sync = helper.pop<Ptr<SceGxmSyncObject>>().get(mem);
-    renderer::subject_done(sync, renderer::SyncObjectSubject::Fragment);
+    const uint32_t timestamp = helper.pop<uint32_t>();
+
+    renderer::subject_done(sync, timestamp);
+}
+
+COMMAND(handle_wait_sync_object) {
+    SceGxmSyncObject *sync = helper.pop<Ptr<SceGxmSyncObject>>().get(mem);
+    RenderTarget *target = helper.pop<RenderTarget *>();
+    const uint32_t timestamp = helper.pop<uint32_t>();
+
+    renderer::wishlist(sync, timestamp);
+
+    if (renderer.current_backend == Backend::Vulkan) {
+        vulkan::VKContext *context = reinterpret_cast<vulkan::VKContext *>(renderer.context);
+        if (context->is_recording)
+            context->stop_recording();
+        vulkan::update_sync_target(sync, reinterpret_cast<vulkan::VKRenderTarget *>(target));
+    }
 }
 
 COMMAND(handle_notification) {
-    SceGxmNotification *nof = helper.pop<Ptr<SceGxmNotification>>().get(mem);
-    [[maybe_unused]] const bool is_vertex = helper.pop<bool>();
+    SceGxmNotification notif = helper.pop<SceGxmNotification>();
+    //[[maybe_unused]] const bool is_vertex = helper.pop<bool>();
 
-    volatile std::uint32_t *val = nof->address.get(mem);
-    if (val) // Ratchet and clank Trilogy request this
-        *val = nof->value;
+    {
+        std::unique_lock<std::mutex> lock(renderer.notification_mutex);
+        uint32_t *val = notif.address.get(mem);
+        if (val) // Ratchet and clank Trilogy request this
+            *val = notif.value;
+    }
+    renderer.notification_ready.notify_all();
+}
+
+COMMAND(new_frame) {
+    if (renderer.current_backend == Backend::Vulkan) {
+        vulkan::new_frame(*reinterpret_cast<vulkan::VKContext *>(renderer.context));
+    }
 }
 
 // Client side function
-void finish(State &state, Context &context) {
-    // Wait for the code
-    wait_for_status(state, &context.render_finish_status, state.last_scene_id, true);
+void finish(State &state, Context *context) {
+    // Add NOP then wait for it
+    renderer::send_single_command(state, context, renderer::CommandOpcode::Nop, true, 1);
 }
 
 int wait_for_status(State &state, int *status, int signal, bool wake_on_equal) {
@@ -67,31 +96,21 @@ int wait_for_status(State &state, int *status, int signal, bool wake_on_equal) {
     return *status;
 }
 
-void wishlist(SceGxmSyncObject *sync_object, const SyncObjectSubject subjects) {
-    {
-        const std::lock_guard<std::mutex> mutex_guard(sync_object->lock);
-
-        if (sync_object->done & subjects) {
-            return;
-        }
+void wishlist(SceGxmSyncObject *sync_object, const uint32_t timestamp) {
+    std::unique_lock<std::mutex> lock(sync_object->lock);
+    if (sync_object->timestamp_current < timestamp) {
+        sync_object->cond.wait(lock, [&]() { return sync_object->timestamp_current >= timestamp; });
     }
-
-    std::unique_lock<std::mutex> finish_mutex(sync_object->lock);
-    sync_object->cond.wait(finish_mutex, [&]() { return sync_object->done & subjects; });
 }
 
-void subject_done(SceGxmSyncObject *sync_object, const SyncObjectSubject subjects) {
+void subject_done(SceGxmSyncObject *sync_object, const uint32_t timestamp) {
+    assert(sync_object->timestamp_ahead >= timestamp);
     {
-        const std::lock_guard<std::mutex> mutex_guard(sync_object->lock);
-        sync_object->done |= subjects;
+        std::unique_lock<std::mutex> lock(sync_object->lock);
+        sync_object->timestamp_current = std::max(sync_object->timestamp_current.load(), timestamp);
     }
-
+    // maybe notify_one is enough
     sync_object->cond.notify_all();
-}
-
-void subject_in_progress(SceGxmSyncObject *sync_object, const SyncObjectSubject subjects) {
-    const std::lock_guard<std::mutex> mutex_guard(sync_object->lock);
-    sync_object->done &= ~subjects;
 }
 
 void submit_command_list(State &state, renderer::Context *context, CommandList &command_list) {

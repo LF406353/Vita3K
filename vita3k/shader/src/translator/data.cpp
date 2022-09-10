@@ -96,6 +96,7 @@ bool USSETranslatorVisitor::vmov(
         compare_method = static_cast<CompareMethod>((test_bit_2 << 1) | test_bit_1);
         inst.opr.src0 = decode_src0(inst.opr.src0, src0_n, src0_bank_sel, end_or_src0_bank_ext, is_double_regs, reg_bits, m_second_program);
         inst.opr.src2 = decode_src12(inst.opr.src2, src2_n, src2_bank_sel, src2_bank_ext, is_double_regs, reg_bits, m_second_program);
+        inst.opr.src2.type = move_data_type;
 
         if (src0_comp_sel) {
             inst.opr.src0.swizzle = inst.opr.src1.swizzle;
@@ -173,7 +174,7 @@ bool USSETranslatorVisitor::vmov(
         disasm::operand_to_str(inst.opr.dest, dest_mask, dest_repeat_offset), conditional_str, disasm::operand_to_str(inst.opr.src1, dest_mask, src1_repeat_offset),
         is_conditional ? fmt::format(": {}", disasm::operand_to_str(inst.opr.src2, dest_mask, src2_repeat_offset)) : "");
 
-    LOG_DISASM(disasm_str);
+    LOG_DISASM("{}", disasm_str);
 
     spv::Id source_to_compare_with_0 = spv::NoResult;
     spv::Id source_1 = load(inst.opr.src1, dest_mask, src1_repeat_offset);
@@ -198,7 +199,7 @@ bool USSETranslatorVisitor::vmov(
         if (compare_op != spv::OpAny) {
             // Merely do what the instruction does
             // First compare source0 with vector 0
-            spv::Id cond_result = m_b.createOp(compare_op, m_b.makeVectorType(m_b.makeBoolType(), m_b.getNumComponents(source_to_compare_with_0)),
+            spv::Id cond_result = m_b.createOp(compare_op, utils::make_vector_or_scalar_type(m_b, m_b.makeBoolType(), m_b.getNumComponents(source_to_compare_with_0)),
                 { source_to_compare_with_0, v0 });
 
             // For each component, if the compare result is true, move the equivalent component from source1 to dest,
@@ -497,12 +498,12 @@ bool USSETranslatorVisitor::vpck(
         source = utils::finalize(m_b, source1, source2, inst.opr.src1.swizzle, 0, dest_mask);
     }
 
-    // source is float destination is int
+    // source is int destination is float
     if (is_float_data_type(inst.opr.dest.type) && !is_float_data_type(inst.opr.src1.type)) {
         source = utils::convert_to_float(m_b, source, inst.opr.src1.type, scale);
     }
 
-    // source is int destination is float
+    // source is float destination is int
     if (!is_float_data_type(inst.opr.dest.type) && is_float_data_type(inst.opr.src1.type)) {
         source = utils::convert_to_int(m_b, source, inst.opr.dest.type, scale);
     }

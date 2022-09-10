@@ -24,26 +24,43 @@
 #include <algorithm>
 
 namespace renderer::gl {
-bool set_uniform_buffer(GLContext &context, MemState &mem, const bool vertex_shader, const int block_num, const int size, const void *data, bool log_active_shader) {
-    renderer::ShaderProgram *program = vertex_shader ? reinterpret_cast<renderer::ShaderProgram *>(context.record.vertex_program.get(mem)->renderer_data.get())
-                                                     : reinterpret_cast<renderer::ShaderProgram *>(context.record.fragment_program.get(mem)->renderer_data.get());
-
+bool set_uniform_buffer(GLContext &context, const ShaderProgram *program, const bool vertex_shader, const int block_num, const int size, const uint8_t *data) {
     auto offset = program->uniform_buffer_data_offsets.at(block_num);
     if (offset == static_cast<std::uint32_t>(-1)) {
         return true;
     }
 
-    const int base_binding_point = vertex_shader ? 0 : 1;
-    const int base_binding_ubo_relative = vertex_shader ? 0 : (SCE_GXM_REAL_MAX_UNIFORM_BUFFER + 1);
+    const size_t data_size_upload = std::min<size_t>(size, program->uniform_buffer_sizes.at(block_num) * 4);
+    const size_t offset_start_upload = offset * 4;
 
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, context.ssbo[base_binding_point]);
-    glBufferSubData(GL_SHADER_STORAGE_BUFFER, offset * 4, std::min<GLsizeiptr>(size, program->uniform_buffer_sizes.at(block_num) * 4), data);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, base_binding_point, context.ssbo[base_binding_point]);
+    if (vertex_shader) {
+        if (!context.vertex_uniform_buffer_storage_ptr.first) {
+            // Allocate a region for it. Don't worry though, when the shader program is changed
+            context.vertex_uniform_buffer_storage_ptr = context.vertex_uniform_stream_ring_buffer.allocate(program->max_total_uniform_buffer_storage * 4);
 
-    if (log_active_shader) {
-        std::vector<uint8_t> my_data((uint8_t *)data, (uint8_t *)data + size);
-        context.ubo_data[base_binding_ubo_relative + block_num] = my_data;
+            if (!context.vertex_uniform_buffer_storage_ptr.first) {
+                LOG_ERROR("Unable to allocate vertex SSBO from persistent mapped buffer");
+                return false;
+            }
+
+            glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 0, context.vertex_uniform_stream_ring_buffer.handle(), context.vertex_uniform_buffer_storage_ptr.second, program->max_total_uniform_buffer_storage * 4);
+        }
+
+        std::memcpy(context.vertex_uniform_buffer_storage_ptr.first + offset_start_upload, data, data_size_upload);
+    } else {
+        if (!context.fragment_uniform_buffer_storage_ptr.first) {
+            // Allocate a region for it. Don't worry though, when the shader program is changed
+            context.fragment_uniform_buffer_storage_ptr = context.fragment_uniform_stream_ring_buffer.allocate(program->max_total_uniform_buffer_storage * 4);
+
+            if (!context.fragment_uniform_buffer_storage_ptr.first) {
+                LOG_ERROR("Unable to allocate fragment SSBO from persistent mapped buffer");
+                return false;
+            }
+
+            glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 1, context.fragment_uniform_stream_ring_buffer.handle(), context.fragment_uniform_buffer_storage_ptr.second, program->max_total_uniform_buffer_storage * 4);
+        }
+
+        std::memcpy(context.fragment_uniform_buffer_storage_ptr.first + offset_start_upload, data, data_size_upload);
     }
 
     return true;

@@ -19,14 +19,18 @@
 
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <queue>
 #include <string>
 
 struct AVFrame;
 struct AVPacket;
+struct AVIOContext;
 struct AVCodecContext;
 struct AVFormatContext;
 struct AVCodecParserContext;
+struct AVCodec;
+struct SwrContext;
 
 union DecoderSize {
     struct {
@@ -49,7 +53,7 @@ enum class DecoderQuery {
     BIT_RATE,
     SAMPLE_RATE,
 
-    AT9_BLOCK_ALIGN,
+    AT9_SAMPLE_PER_FRAME,
     AT9_SAMPLE_PER_SUPERFRAME,
     AT9_FRAMES_IN_SUPERFRAME,
     AT9_SUPERFRAME_SIZE,
@@ -64,8 +68,8 @@ struct DecoderState {
     virtual void flush();
     virtual bool send(const uint8_t *data, uint32_t size) = 0;
     virtual bool receive(uint8_t *data, DecoderSize *size = nullptr) = 0;
-    virtual void configure(void *options);
-    virtual uint32_t get_es_size(const uint8_t *data);
+    virtual uint32_t get_es_size();
+    virtual void clear_context();
 
     virtual ~DecoderState();
 };
@@ -80,16 +84,24 @@ struct H264DecoderOptions {
 struct H264DecoderState : public DecoderState {
     AVCodecParserContext *parser{};
 
+    uint32_t width_out = 0;
+    uint32_t height_out = 0;
+
     uint64_t pts = ~0ull;
     uint64_t dts = ~0ull;
+    uint64_t pts_out = ~0ull;
+
+    bool is_stopped = true;
 
     static uint32_t buffer_size(DecoderSize size);
 
     uint32_t get(DecoderQuery query) override;
 
     bool send(const uint8_t *data, uint32_t size) override;
-    bool receive(uint8_t *data, DecoderSize *size) override;
-    void configure(void *options) override;
+    bool receive(uint8_t *data, DecoderSize *size = nullptr) override;
+    void configure(void *options);
+    void get_res(uint32_t &width, uint32_t &height);
+    void get_pts(uint32_t &upper, uint32_t &lower);
 
     H264DecoderState(uint32_t width, uint32_t height);
     ~H264DecoderState() override;
@@ -103,18 +115,18 @@ struct MjpegDecoderState : public DecoderState {
 };
 
 struct Atrac9DecoderState : public DecoderState {
-    void *decoder_handle;
     uint32_t config_data;
-
-    std::vector<std::uint8_t> result;
-
-    uint32_t get_channel_count();
-    uint32_t get_samples_per_superframe();
-    uint32_t get_block_align();
-    uint32_t get_frames_in_superframe();
-    uint32_t get_superframe_size();
+    void *decoder_handle;
+    void *atrac9_info;
+    uint32_t es_size_used;
+    std::vector<uint8_t> result;
+    int superframe_frame_idx;
+    int superframe_data_left;
 
     uint32_t get(DecoderQuery query) override;
+    uint32_t get_es_size() override;
+
+    void clear_context() override;
 
     bool send(const uint8_t *data, uint32_t size) override;
     bool receive(uint8_t *data, DecoderSize *size) override;
@@ -124,8 +136,13 @@ struct Atrac9DecoderState : public DecoderState {
 };
 
 struct Mp3DecoderState : public DecoderState {
+    AVCodec *codec;
+    uint32_t es_size_used;
+
     uint32_t get(DecoderQuery query) override;
-    uint32_t get_es_size(const uint8_t *data) override;
+    uint32_t get_es_size() override;
+
+    void clear_context() override;
 
     bool send(const uint8_t *data, uint32_t size) override;
     bool receive(uint8_t *data, DecoderSize *size) override;
@@ -134,17 +151,24 @@ struct Mp3DecoderState : public DecoderState {
     ~Mp3DecoderState() override;
 };
 
+struct ADPCMHistory {
+    int32_t hist1;
+    int32_t hist2;
+    int32_t hist3;
+    int32_t hist4;
+};
+
 struct PCMDecoderState : public DecoderState {
 private:
     std::vector<std::uint8_t> final_result;
     float dest_frequency;
-
-    std::int32_t adpcm_history1;
-    std::int32_t adpcm_history2;
-    std::int32_t adpcm_history3;
-    std::int32_t adpcm_history4;
+    SwrContext *swr_mono_to_stereo;
+    SwrContext *swr_stereo;
 
 public:
+    // there are at most 2 channels
+    ADPCMHistory adpcm_history[2] = {};
+
     std::uint32_t source_channels;
 
     /**
@@ -161,6 +185,23 @@ public:
     bool receive(uint8_t *data, DecoderSize *size) override;
 
     explicit PCMDecoderState(const float dest_frequency);
+    ~PCMDecoderState();
+};
+
+struct AacDecoderState : public DecoderState {
+    AVCodec *codec;
+    AVFrame *frame;
+    uint32_t es_size_used;
+    uint32_t get(DecoderQuery query) override;
+
+    void clear_context() override;
+
+    bool send(const uint8_t *data, uint32_t size) override;
+    bool receive(uint8_t *data, DecoderSize *size) override;
+    uint32_t get_es_size() override;
+
+    explicit AacDecoderState(uint32_t sample_rate, uint32_t channels);
+    ~AacDecoderState();
 };
 
 struct PlayerState {
@@ -203,5 +244,4 @@ struct PlayerState {
 
 void convert_yuv_to_rgb(const uint8_t *yuv, uint8_t *rgba, uint32_t width, uint32_t height);
 void copy_yuv_data_from_frame(AVFrame *frame, uint8_t *dest);
-bool resample_s16_to_f32(const int16_t *source_s16, int32_t source_channels, uint32_t source_samples, uint32_t source_freq,
-    float *dest_f32, uint32_t dest_samples, uint32_t dest_freq);
+std::string codec_error_name(int error);

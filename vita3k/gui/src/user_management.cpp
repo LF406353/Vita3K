@@ -18,20 +18,23 @@
 #include "private.h"
 
 #include <config/functions.h>
+#include <config/state.h>
+#include <display/state.h>
 #include <gui/functions.h>
+#include <host/dialog/filesystem.hpp>
+#include <io/state.h>
 #include <misc/cpp/imgui_stdlib.h>
 #include <util/log.h>
 #include <util/string_utils.h>
 
-#include <nfd.h>
 #include <pugixml.hpp>
 #include <stb_image.h>
 
 namespace gui {
 
-static bool init_avatar(GuiState &gui, HostState &host, const std::string &user_id, const std::string avatar) {
+static bool init_avatar(GuiState &gui, EmuEnvState &emuenv, const std::string &user_id, const std::string avatar) {
     gui.users_avatar[user_id] = {};
-    const auto avatar_path = avatar == "default" ? fs::path(host.base_path) / "data/image/icon.png" : fs::path(string_utils::utf_to_wide(avatar));
+    const auto avatar_path = avatar == "default" ? fs::path(emuenv.base_path) / "data/image/icon.png" : fs::path(string_utils::utf_to_wide(avatar));
 
     if (!fs::exists(avatar_path)) {
         LOG_WARN("Avatar image doesn't exist: {}.", avatar_path.string());
@@ -61,9 +64,9 @@ static bool init_avatar(GuiState &gui, HostState &host, const std::string &user_
     return gui.users_avatar.find(user_id) != gui.users_avatar.end();
 }
 
-void get_users_list(GuiState &gui, HostState &host) {
+void get_users_list(GuiState &gui, EmuEnvState &emuenv) {
     gui.users.clear();
-    const auto user_path{ fs::path(host.pref_path) / "ux0/user" };
+    const auto user_path{ fs::path(emuenv.pref_path) / "ux0/user" };
     if (fs::exists(user_path) && !fs::is_empty(user_path)) {
         for (const auto &path : fs::directory_iterator(user_path)) {
             pugi::xml_document user_xml;
@@ -86,7 +89,7 @@ void get_users_list(GuiState &gui, HostState &host) {
                 // Load Avatar
                 if (!user_child.child("avatar").text().empty())
                     user.avatar = user_child.child("avatar").text().as_string();
-                init_avatar(gui, host, user.id, user.avatar);
+                init_avatar(gui, emuenv, user.id, user.avatar);
 
                 // Load sort Apps list settings
                 auto sort_apps_list = user_child.child("sort-apps-list");
@@ -119,8 +122,8 @@ void get_users_list(GuiState &gui, HostState &host) {
     }
 }
 
-void save_user(GuiState &gui, HostState &host, const std::string &user_id) {
-    const auto user_path{ fs::path(host.pref_path) / "ux0/user" / user_id };
+void save_user(GuiState &gui, EmuEnvState &emuenv, const std::string &user_id) {
+    const auto user_path{ fs::path(emuenv.pref_path) / "ux0/user" / user_id };
     if (!fs::exists(user_path))
         fs::create_directory(user_path);
 
@@ -162,27 +165,31 @@ void save_user(GuiState &gui, HostState &host, const std::string &user_id) {
         LOG_ERROR("Fail save xml for user id: {}, name: {}, in path: {}", user.id, user.name, user_path.string());
 }
 
-void init_user(GuiState &gui, HostState &host, const std::string &user_id) {
-    host.io.user_id = user_id;
-    host.io.user_name = gui.users[user_id].name;
+void init_user(GuiState &gui, EmuEnvState &emuenv, const std::string &user_id) {
+    emuenv.io.user_id = user_id;
+    emuenv.io.user_name = gui.users[user_id].name;
     if (!gui.users[user_id].backgrounds.empty()) {
         for (const auto &bg : gui.users[user_id].backgrounds)
-            init_user_background(gui, host, user_id, bg);
+            init_user_background(gui, emuenv, user_id, bg);
     }
-    init_theme(gui, host, gui.users[user_id].theme_id);
-    init_notice_info(gui, host);
-    init_last_time_apps(gui, host);
+    init_theme(gui, emuenv, gui.users[user_id].theme_id);
+    init_notice_info(gui, emuenv);
+    init_last_time_apps(gui, emuenv);
 }
 
-void open_user(GuiState &gui, HostState &host) {
+void open_user(GuiState &gui, EmuEnvState &emuenv) {
     gui.live_area.user_management = false;
 
-    if (gui.users[host.io.user_id].start_type == "image")
-        init_user_start_background(gui, gui.users[host.io.user_id].start_path);
+    if (gui.users[emuenv.io.user_id].start_type == "image")
+        init_user_start_background(gui, gui.users[emuenv.io.user_id].start_path);
     else
-        init_theme_start_background(gui, host, gui.users[host.io.user_id].theme_id);
+        init_theme_start_background(gui, emuenv, gui.users[emuenv.io.user_id].theme_id);
 
     gui.live_area.start_screen = true;
+#ifdef USE_VITA3K_UPDATE
+    if (init_vita3k_update(gui))
+        gui.help_menu.vita3k_update = true;
+#endif
 }
 
 static auto get_users_index(GuiState &gui, const std::string &user_name) {
@@ -203,10 +210,10 @@ void clear_temp(GuiState &gui) {
     user_id.clear();
 }
 
-void draw_user_management(GuiState &gui, HostState &host) {
+void draw_user_management(GuiState &gui, EmuEnvState &emuenv) {
     const auto display_size = ImGui::GetIO().DisplaySize;
-    const auto RES_SCALE = ImVec2(display_size.x / host.res_width_dpi_scale, display_size.y / host.res_height_dpi_scale);
-    const auto SCALE = ImVec2(RES_SCALE.x * host.dpi_scale, RES_SCALE.y * host.dpi_scale);
+    const auto RES_SCALE = ImVec2(display_size.x / emuenv.res_width_dpi_scale, display_size.y / emuenv.res_height_dpi_scale);
+    const auto SCALE = ImVec2(RES_SCALE.x * emuenv.dpi_scale, RES_SCALE.y * emuenv.dpi_scale);
     const auto INFORMATION_BAR_HEIGHT = 32.f * SCALE.y;
     const auto WINDOW_SIZE = ImVec2(display_size.x, display_size.y - INFORMATION_BAR_HEIGHT);
 
@@ -216,12 +223,12 @@ void draw_user_management(GuiState &gui, HostState &host) {
     ImGui::SetNextWindowBgAlpha(0.f);
     ImGui::Begin("##user_management", &gui.live_area.user_management, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
 
-    if (!host.display.imgui_render || ImGui::IsWindowHovered(ImGuiHoveredFlags_RootAndChildWindows))
+    if (!emuenv.display.imgui_render || ImGui::IsWindowHovered(ImGuiHoveredFlags_RootAndChildWindows))
         gui.live_area.information_bar = true;
 
     ImGui::GetBackgroundDrawList()->AddRectFilled(ImVec2(0.f, INFORMATION_BAR_HEIGHT), display_size, IM_COL32(10.f, 50.f, 140.f, 255.f), 0.f, ImDrawFlags_RoundCornersAll);
 
-    const auto user_path{ fs::path(host.pref_path) / "ux0/user" };
+    const auto user_path{ fs::path(emuenv.pref_path) / "ux0/user" };
     const auto AVATAR_SIZE = ImVec2(128 * SCALE.x, 128 * SCALE.y);
     const auto SMALL_AVATAR_SIZE = (ImVec2(34.f * SCALE.x, 34.f * SCALE.y));
     ImGui::SetWindowFontScale(1.4f * RES_SCALE.x);
@@ -246,7 +253,9 @@ void draw_user_management(GuiState &gui, HostState &host) {
     const auto DELETE_USER_POS = AVATAR_POS.x + (SPACE_AVATAR * (gui.users.size()));
     const auto BUTTON_SIZE = ImVec2(220 * SCALE.x, 36 * SCALE.y);
     const auto BUTTON_POS = ImVec2((SIZE_USER.x / 2.f) - (BUTTON_SIZE.x / 2.f), 314.f * SCALE.y);
+
     auto lang = gui.lang.user_management;
+    auto common = emuenv.common_dialog.lang.common;
 
     if (menu.empty()) {
         // Users list
@@ -266,7 +275,7 @@ void draw_user_management(GuiState &gui, HostState &host) {
             user_id = fmt::format("{:0>2d}", id);
             auto i = 1;
             const auto user = lang["user"].c_str();
-            for (i; i < gui.users.size(); i++) {
+            for (; i < gui.users.size(); i++) {
                 if (get_users_index(gui, user + std::to_string(i)) == gui.users.end())
                     break;
             }
@@ -276,7 +285,7 @@ void draw_user_management(GuiState &gui, HostState &host) {
             temp.theme_id = "default";
             temp.use_theme_bg = true;
             temp.start_type = "default";
-            init_avatar(gui, host, "temp", "default");
+            init_avatar(gui, emuenv, "temp", "default");
         }
         ImGui::SetWindowFontScale(0.9f);
         const auto calc_text = (AVATAR_SIZE.x / 2.f) - (ImGui::CalcTextSize(lang["create_user"].c_str()).x / 2.f);
@@ -300,13 +309,13 @@ void draw_user_management(GuiState &gui, HostState &host) {
             ImGui::SetCursorPos(USER_POS);
             ImGui::PushStyleColor(ImGuiCol_Text, GUI_COLOR_TEXT_TITLE);
             if (ImGui::Selectable("##avatar", false, ImGuiSelectableFlags_None, AVATAR_SIZE)) {
-                if (host.io.user_id != user.first)
-                    init_user(gui, host, user.first);
-                if (host.cfg.user_id != user.first) {
-                    host.cfg.user_id = user.first;
-                    config::serialize_config(host.cfg, host.cfg.config_path);
+                if (emuenv.io.user_id != user.first)
+                    init_user(gui, emuenv, user.first);
+                if (emuenv.cfg.user_id != user.first) {
+                    emuenv.cfg.user_id = user.first;
+                    config::serialize_config(emuenv.cfg, emuenv.cfg.config_path);
                 }
-                open_user(gui, host);
+                open_user(gui, emuenv);
             }
             ImGui::SetWindowFontScale(0.9f);
             ImGui::PopStyleColor();
@@ -340,7 +349,7 @@ void draw_user_management(GuiState &gui, HostState &host) {
         ImGui::SetCursorPos(ImVec2(AVATAR_POS.x, AVATAR_POS.y - BUTTON_SIZE.y));
         if ((temp.avatar != "default") && ImGui::Button(lang["reset_avatar"].c_str(), ImVec2(AVATAR_SIZE.x, BUTTON_SIZE.y))) {
             temp.avatar = "default";
-            init_avatar(gui, host, "temp", "default");
+            init_avatar(gui, emuenv, "temp", "default");
         }
         if (gui.users_avatar.find("temp") != gui.users_avatar.end()) {
             ImGui::SetCursorPos(ImVec2(AVATAR_POS));
@@ -348,11 +357,11 @@ void draw_user_management(GuiState &gui, HostState &host) {
         }
         ImGui::SetCursorPos(ImVec2(AVATAR_POS.x, AVATAR_POS.y + AVATAR_SIZE.y));
         if (ImGui::Button(lang["change_avatar"].c_str(), ImVec2(AVATAR_SIZE.x, BUTTON_SIZE.y))) {
-            nfdchar_t *avatar_path;
-            nfdresult_t result = NFD_OpenDialog("bmp,gif,jpg,png,tif", nullptr, &avatar_path);
+            std::filesystem::path avatar_path = "";
+            host::dialog::filesystem::Result result = host::dialog::filesystem::open_file(avatar_path, { { "Image file", { "bmp", "gif", "jpg", "png", "tif" } } });
 
-            if ((result == NFD_OKAY) && init_avatar(gui, host, "temp", avatar_path))
-                temp.avatar = avatar_path;
+            if ((result == host::dialog::filesystem::Result::SUCCESS) && init_avatar(gui, emuenv, "temp", avatar_path.string()))
+                temp.avatar = avatar_path.string();
         }
         ImGui::SetWindowFontScale(0.8f);
         const auto INPUT_NAME_SIZE = 330.f * SCALE.x;
@@ -367,7 +376,7 @@ void draw_user_management(GuiState &gui, HostState &host) {
         const auto check_free_name = (menu == "create" ? free_name : (temp.name == gui.users[user_id].name) || free_name);
         if (!check_free_name) {
             ImGui::SetCursorPos(ImVec2(INPUT_NAME_POS.x + INPUT_NAME_SIZE + 10.f, INPUT_NAME_POS.y));
-            ImGui::TextColored(GUI_COLOR_TEXT, lang["user_name_used"].c_str());
+            ImGui::TextColored(GUI_COLOR_TEXT, "! %s", lang["user_name_used"].c_str());
         }
         ImGui::SetCursorPos(BUTTON_POS);
         ImGui::PushStyleVar(ImGuiStyleVar_SelectableTextAlign, ImVec2(0.5f, 0.5f));
@@ -375,7 +384,7 @@ void draw_user_management(GuiState &gui, HostState &host) {
         if (!temp.name.empty() && check_free_name ? ImGui::Button(confirm, BUTTON_SIZE) : ImGui::Selectable(confirm, false, ImGuiSelectableFlags_Disabled, BUTTON_SIZE)) {
             gui.users_avatar[user_id] = std::move(gui.users_avatar["temp"]);
             gui.users[user_id] = temp;
-            save_user(gui, host, user_id);
+            save_user(gui, emuenv, user_id);
             if (menu == "create")
                 menu = "confirm";
             else {
@@ -404,10 +413,10 @@ void draw_user_management(GuiState &gui, HostState &host) {
         title = lang["delete_user"];
         if (user_id.empty()) {
             ImGui::SetWindowFontScale(1.f);
-            ImGui::SetCursorPos(ImVec2((SIZE_USER.x / 2.f) - (ImGui::CalcTextSize("Select the user you want to delete.").x / 2.f), 5.f * SCALE.y));
+            ImGui::SetCursorPos(ImVec2((SIZE_USER.x / 2.f) - (ImGui::CalcTextSize(lang["user_delete"].c_str()).x / 2.f), 5.f * SCALE.y));
             const auto CHILD_DELETE_USER_SIZE = ImVec2(674 * SCALE.x, 308.f * SCALE.y);
             const auto SELECT_SIZE = ImVec2(674.f * SCALE.x, 46.f * SCALE.y);
-            ImGui::TextColored(GUI_COLOR_TEXT, lang["user_delete"].c_str());
+            ImGui::TextColored(GUI_COLOR_TEXT, "%s", lang["user_delete"].c_str());
             ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 0.f);
             ImGui::SetNextWindowPos(ImVec2(display_size.x / 2.f, (168.f * SCALE.y)), ImGuiCond_Always, ImVec2(0.5f, 0.f));
             ImGui::BeginChild("##delete_user_child", CHILD_DELETE_USER_SIZE, false, ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings);
@@ -431,41 +440,41 @@ void draw_user_management(GuiState &gui, HostState &host) {
             ImGui::SetWindowFontScale(0.8f);
             if (del_menu.empty()) {
                 ImGui::SetCursorPos(ImVec2(148.f * SCALE.x, 100.f * SCALE.y));
-                ImGui::TextColored(GUI_COLOR_TEXT, lang["user_delete_msg"].c_str());
+                ImGui::TextColored(GUI_COLOR_TEXT, "%s", lang["user_delete_msg"].c_str());
                 ImGui::SetCursorPos(ImVec2(194.f * SCALE.x, 148.f * SCALE.y));
                 ImGui::TextColored(GUI_COLOR_TEXT, "%s", gui.users[user_id].name.c_str());
                 ImGui::SetCursorPos(ImVec2(148.f * SCALE.x, 194.f * SCALE.y));
-                ImGui::TextWrapped(lang["user_delete_message"].c_str());
+                ImGui::TextWrapped("%s", lang["user_delete_message"].c_str());
                 ImGui::SetWindowFontScale(1.f);
                 ImGui::SetCursorPos(BUTTON_POS);
-                if (ImGui::Button(lang["delete"].c_str(), BUTTON_SIZE))
+                if (ImGui::Button(common["delete"].c_str(), BUTTON_SIZE))
                     del_menu = "warn";
             } else if (del_menu == "warn") {
-                const auto calc_text = (SIZE_USER.x / 2.f) - (ImGui::CalcTextSize("Are you sure you want to continue?").x / 2.f);
+                const auto calc_text = (SIZE_USER.x / 2.f) - (ImGui::CalcTextSize(lang["user_delete_warn"].c_str()).x / 2.f);
                 ImGui::SetCursorPos(ImVec2(calc_text, 146.f * SCALE.y));
-                ImGui::TextColored(GUI_COLOR_TEXT, lang["user_delete_warn"].c_str());
+                ImGui::TextColored(GUI_COLOR_TEXT, "%s", lang["user_delete_warn"].c_str());
                 ImGui::SetCursorPos(BUTTON_POS);
                 ImGui::SetWindowFontScale(1.f);
                 ImGui::SetCursorPos(ImVec2((SIZE_USER.x / 2.f) - BUTTON_SIZE.x - 20.f, BUTTON_POS.y));
-                if (ImGui::Button(lang["no"].c_str(), BUTTON_SIZE)) {
+                if (ImGui::Button(common["no"].c_str(), BUTTON_SIZE)) {
                     user_id.clear();
                     del_menu.clear();
                 }
                 ImGui::SameLine(0, 40.f * SCALE.x);
-                if (ImGui::Button(lang["yes"].c_str(), BUTTON_SIZE)) {
+                if (ImGui::Button(common["yes"].c_str(), BUTTON_SIZE)) {
                     fs::remove_all(user_path / user_id);
                     gui.users_avatar.erase(user_id);
                     gui.users.erase(get_users_index(gui, gui.users[user_id].name));
-                    if (gui.users.empty() || (user_id == host.io.user_id)) {
-                        host.cfg.user_id.clear();
-                        config::serialize_config(host.cfg, host.cfg.config_path);
-                        host.io.user_id.clear();
+                    if (gui.users.empty() || (user_id == emuenv.io.user_id)) {
+                        emuenv.cfg.user_id.clear();
+                        config::serialize_config(emuenv.cfg, emuenv.cfg.config_path);
+                        emuenv.io.user_id.clear();
                     }
                     del_menu = "confirm";
                 }
             } else if (del_menu == "confirm") {
-                ImGui::SetCursorPos(ImVec2((SIZE_USER.x / 2.f) - (ImGui::CalcTextSize("User Deleted.").x / 2.f), 146.f * SCALE.y));
-                ImGui::TextColored(GUI_COLOR_TEXT, lang["user_deleted"].c_str());
+                ImGui::SetCursorPos(ImVec2((SIZE_USER.x / 2.f) - (ImGui::CalcTextSize(lang["user_deleted"].c_str()).x / 2.f), 146.f * SCALE.y));
+                ImGui::TextColored(GUI_COLOR_TEXT, "%s", lang["user_deleted"].c_str());
                 ImGui::SetWindowFontScale(1.f);
                 ImGui::SetCursorPos(BUTTON_POS);
                 if (ImGui::Button("OK", BUTTON_SIZE)) {
@@ -481,10 +490,10 @@ void draw_user_management(GuiState &gui, HostState &host) {
     ImGui::SetCursorPosY(WINDOW_SIZE.y - POS_SEPARATOR);
     ImGui::Separator();
     ImGui::SetWindowFontScale(1.f);
-    const auto USER_ALREADY_INIT = !gui.users.empty() && !host.io.user_id.empty() && (host.cfg.user_id == host.io.user_id);
+    const auto USER_ALREADY_INIT = !gui.users.empty() && !emuenv.io.user_id.empty() && (emuenv.cfg.user_id == emuenv.io.user_id);
     if ((menu.empty() && USER_ALREADY_INIT) || (!menu.empty() && (menu != "confirm") && del_menu.empty())) {
         ImGui::SetCursorPos(ImVec2(54.f * SCALE.x, ImGui::GetCursorPosY() + (10.f * SCALE.y)));
-        if (ImGui::Button(lang["cancel"].c_str(), ImVec2(80.f * SCALE.x, 40.f * SCALE.y))) {
+        if (ImGui::Button(common["cancel"].c_str(), ImVec2(80.f * SCALE.x, 40.f * SCALE.y))) {
             if (!menu.empty()) {
                 if ((menu == "create") || (menu == "edit"))
                     clear_temp(gui);
@@ -494,21 +503,21 @@ void draw_user_management(GuiState &gui, HostState &host) {
                     menu.clear();
             } else if (USER_ALREADY_INIT) {
                 gui.live_area.user_management = false;
-                gui.live_area.app_selector = true;
+                gui.live_area.home_screen = true;
             }
         }
     }
     if (menu.empty() && !gui.users.empty()) {
-        ImGui::SetCursorPos(ImVec2((WINDOW_SIZE.x / 2.f) - (ImGui::CalcTextSize("Automatic User Login").x / 2.f), WINDOW_SIZE.y - 50.f * SCALE.y));
-        if (ImGui::Checkbox(lang["automatic_user_login"].c_str(), &host.cfg.auto_user_login))
-            config::serialize_config(host.cfg, host.cfg.config_path);
+        ImGui::SetCursorPos(ImVec2((WINDOW_SIZE.x / 2.f) - (ImGui::CalcTextSize(lang["automatic_user_login"].c_str()).x / 2.f), WINDOW_SIZE.y - 50.f * SCALE.y));
+        if (ImGui::Checkbox(lang["automatic_user_login"].c_str(), &emuenv.cfg.auto_user_login))
+            config::serialize_config(emuenv.cfg, emuenv.cfg.config_path);
     }
-    if (!gui.users.empty() && (gui.users.find(host.cfg.user_id) != gui.users.end())) {
+    if (!gui.users.empty() && (gui.users.find(emuenv.cfg.user_id) != gui.users.end())) {
         ImGui::SetCursorPos(ImVec2(WINDOW_SIZE.x - 220.f * SCALE.x, WINDOW_SIZE.y - (POS_SEPARATOR / 2.f) - (SMALL_AVATAR_SIZE.y / 2.f)));
-        if (gui.users_avatar.find(host.cfg.user_id) != gui.users_avatar.end())
-            ImGui::Image(gui.users_avatar[host.cfg.user_id], SMALL_AVATAR_SIZE);
-        ImGui::SetCursorPos(ImVec2(WINDOW_SIZE.x - 180.f * SCALE.x, WINDOW_SIZE.y - (POS_SEPARATOR / 2.f) - (ImGui::CalcTextSize(gui.users[host.cfg.user_id].name.c_str()).y / 2.f)));
-        ImGui::TextColored(GUI_COLOR_TEXT, "%s", gui.users[host.cfg.user_id].name.c_str());
+        if (gui.users_avatar.find(emuenv.cfg.user_id) != gui.users_avatar.end())
+            ImGui::Image(gui.users_avatar[emuenv.cfg.user_id], SMALL_AVATAR_SIZE);
+        ImGui::SetCursorPos(ImVec2(WINDOW_SIZE.x - 180.f * SCALE.x, WINDOW_SIZE.y - (POS_SEPARATOR / 2.f) - (ImGui::CalcTextSize(gui.users[emuenv.cfg.user_id].name.c_str()).y / 2.f)));
+        ImGui::TextColored(GUI_COLOR_TEXT, "%s", gui.users[emuenv.cfg.user_id].name.c_str());
     }
     ImGui::End();
     ImGui::PopStyleVar();

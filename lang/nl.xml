@@ -14,19 +14,30 @@
 		</emulation>
 		<configuration name="Configuratie">
 			<settings>Instellingen</settings>
-			<user_management>Gebruiker Beheer</user_management>
+			<user_management>Gebruikerbeheer</user_management>
 		</configuration>
 		<controls name="Besturing">
 			<keyboard_controls>Toetsenbord Besturing</keyboard_controls>
 		</controls>
 		<help name="Help">
-			<about>Over</about>
 			<welcome>Welkom</welcome>
 		</help>
 	</main_menubar>
 
+	<about name="Over">
+		<vita3k>Vita3K: a PS Vita/PS TV Emulator. The world's first functional PS Vita/PS TV emulator.</vita3k>
+		<about_vita3k>Vita3K is an experimental open-source PlayStation Vita/PlayStation TV emulator written in C++ for Windows and Linux operating systems.</about_vita3k>
+		<note>Note: The emulator is still in a very early stage of development.</note>
+		<github_website>If you're interested in contributing, check out our GitHub:</github_website>
+		<vita3k_website>Visit our website for more info:</vita3k_website>
+		<vita3k_staff>Vita3K Staff</vita3k_staff>
+		<developers>Developers</developers>
+		<contributors>Contributors</contributors>
+	</about>
+
 	<app_context>
 		<update_history>Updategeschiedenis</update_history>
+		<history_version>Versie {}</history_version>
 		<information>Informatie</information>
 		<app_delete>Deze applicatie en alle gerelateerde data, inclusief opgeslagen data, worden verwijderd.</app_delete>
 		<save_delete>Wil je deze opgeslagen data verwijderen?</save_delete>
@@ -90,6 +101,74 @@
 			<month>november</month>
 			<month>december</month>
 		</small_ymonth>
+		<mday>
+			<days></days>
+			<days>1</days>
+			<days>2</days>
+			<days>3</days>
+			<days>4</days>
+			<days>5</days>
+			<days>6</days>
+			<days>7</days>
+			<days>8</days>
+			<days>9</days>
+			<days>10</days>
+			<days>11</days>
+			<days>12</days>
+			<days>13</days>
+			<days>14</days>
+			<days>15</days>
+			<days>16</days>
+			<days>17</days>
+			<days>18</days>
+			<days>19</days>
+			<days>20</days>
+			<days>21</days>
+			<days>22</days>
+			<days>23</days>
+			<days>24</days>
+			<days>25</days>
+			<days>26</days>
+			<days>27</days>
+			<days>28</days>
+			<days>29</days>
+			<days>30</days>
+			<days>31</days>
+		</mday>
+		<small_mday>
+			<days></days>
+			<days>1</days>
+			<days>2</days>
+			<days>3</days>
+			<days>4</days>
+			<days>5</days>
+			<days>6</days>
+			<days>7</days>
+			<days>8</days>
+			<days>9</days>
+			<days>10</days>
+			<days>11</days>
+			<days>12</days>
+			<days>13</days>
+			<days>14</days>
+			<days>15</days>
+			<days>16</days>
+			<days>17</days>
+			<days>18</days>
+			<days>19</days>
+			<days>20</days>
+			<days>21</days>
+			<days>22</days>
+			<days>23</days>
+			<days>24</days>
+			<days>25</days>
+			<days>26</days>
+			<days>27</days>
+			<days>28</days>
+			<days>29</days>
+			<days>30</days>
+			<days>31</days>
+		</small_mday>
 		<hidden_trophy>Verborgen trofee</hidden_trophy>
 		<one_hour_ago>1 uur geleden</one_hour_ago>
 		<one_minute_ago>1 minuut geleden</one_minute_ago>
@@ -100,6 +179,20 @@
 		<hours_ago>{} uur geleden</hours_ago>
 		<minutes_ago>{} minuten geleden</minutes_ago>
 	</common>
+
+	<content_manager name="Content manager">
+		<application name="Applicaties">
+			<delete>De geselecteerde applicaties en alle gerelateerde data, inclusief opgeslagen data, worden verwijderd.</delete>
+			<no_item>Er zijn geen content-items.</no_item>
+		</application>
+		<saved_data name="Opgeslagen data">
+			<delete>De geselecteerde opgeslagen data-items worden verwijderd.</delete>
+			<no_saved_data>Er zijn geen opgeslagen data.</no_saved_data>
+		</saved_data>
+		<theme>Thema</theme>
+		<free_space>Vrije ruimte</free_space>
+		<clear_all>Alles wissen</clear_all>
+	</content_manager>
 
 	<dialog>
 		<trophy>
@@ -140,6 +233,7 @@ Schakel het systeem niet uit en sluit de applicatie niet.</warning_saving>
 
 	<game_data>
 		<app_close>De volgende applicatie wordt gesloten.</app_close>
+		<data_delete>Te verwijderen data:</data_delete>
 	</game_data>
 
 	<indicator>
@@ -170,6 +264,7 @@ Je Vita3K-systeem is gereed!</completed_setup>
 		<theme_background name="Thema en achtergrond">
 			<default>Standaard</default>
 			<theme name="Thema">
+				<find_in_altervista>Zoeken in Altervista</find_in_altervista>
 				<information name="Informatie">
 					<name>Naam</name>
 					<provider>Provider</provider>
@@ -182,7 +277,10 @@ Je Vita3K-systeem is gereed!</completed_setup>
 			<start_screen name="Startscherm">
 				<image>Afbeelding</image>
 			</start_screen>
-			<home_screen_backgrounds>Achtergronden voor beginscherm</home_screen_backgrounds>
+			<home_screen_backgrounds name="Achtergronden voor beginscherm">
+				<delete_background>Delete Background</delete_background>
+				<add_background>Add Background</add_background>
+			</home_screen_backgrounds>
 		</theme_background>
 		<date_time name="Datum en tijd">
 			<date_format name ="Datumweergave">
@@ -199,7 +297,7 @@ Je Vita3K-systeem is gereed!</completed_setup>
 			<system_language>Systeemtaal</system_language>
 			<input_language name="Invoertalen">
 				<keyboards name="Toetsenborden">
-					<ime_langagues>
+					<ime_languages>
 						<lang id="1">Deens</lang>
 						<lang id="2">Duits</lang>
 						<lang id="262144">Engels (Verenigd Koninkrijk)</lang>
@@ -216,7 +314,7 @@ Je Vita3K-systeem is gereed!</completed_setup>
 						<lang id="2048">Fins</lang>
 						<lang id="4096">Zweeds</lang>
 						<lang id="524288">Turks</lang>
-					</ime_langagues>
+					</ime_languages>
 				</keyboards>
 			</input_language>
 		</language>
@@ -238,12 +336,23 @@ Je kunt trofeeën verdienen door een applicatie te gebruiken die de trofeefuncti
 	</trophy_collection>
 
 	<user_management>
-		<create_user>Maak Gebruiker</create_user>
-		<edit_user>Bewerk Gebruiker</edit_user>
-		<delete_user>Verwijder Gebruiker</delete_user>
-		<change_avatar>Verander Avatar</change_avatar>
+		<select_user>Select your user</select_user>
+		<create_user>Gebruiker maken</create_user>
+		<user_created>De volgende gebruiker is gemaakt:</user_created>
+		<edit_user>Gebruiker bewerken</edit_user>
+		<user_name_used>This name is already in use.</user_name_used>
+		<delete_user>Gebruiker verwijderen</delete_user>
+		<user_delete>Selecteer de gebruiker die u wil verwijderen.</user_delete>
+		<user_delete_msg>De volgende gebruiker wordt verwijderd:</user_delete_msg>
+		<user_delete_message>Als je de gebruiker verwijdert, worden de door de gebruiker opgeslagen data, trofeeën verwijderd.</user_delete_message>
+		<user_delete_warn>De gebruiker wordt verwijderd.
+Weet je zeker dat je doorgaan?</user_delete_warn>
+		<user_deleted>Gebruiker verwijderd.</user_deleted>
+		<change_avatar>Avatar wijzigen</change_avatar>
+		<reset_avatar>Reset Avatar</reset_avatar>
 		<name>Naam</name>
 		<user>Gebruiker</user>
 		<confirm>Bevestigen</confirm>
+		<automatic_user_login>Automatic User Login</automatic_user_login>
 	</user_management>
 </lang>

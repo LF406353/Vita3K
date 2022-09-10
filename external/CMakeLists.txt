@@ -1,5 +1,10 @@
 include(${CMAKE_ROOT}/Modules/ExternalProject.cmake)
 
+# Make option() in all external projects do nothing when a normal variable of the
+# same name exists. The normal variable is not removed. The cache entry is not
+# created or updated and is ignored if it exists.
+set(CMAKE_POLICY_DEFAULT_CMP0077 "NEW")
+
 function(check_submodules_present)
     file(READ "${CMAKE_SOURCE_DIR}/.gitmodules" gitmodules)
     string(REGEX MATCHALL "path *= *[^ \t\r\n]*" gitmodules ${gitmodules})
@@ -74,33 +79,6 @@ target_include_directories(googletest PUBLIC googletest/googletest/include)
 target_include_directories(googletest PRIVATE googletest/googletest)
 target_compile_definitions(googletest PUBLIC GTEST_HAS_PTHREAD=0)
 set_property(TARGET googletest PROPERTY FOLDER externals)
-
-add_library(microprofile STATIC microprofile/microprofile.cpp microprofile/microprofile.h)
-target_include_directories(microprofile PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/microprofile")
-set_property(TARGET microprofile PROPERTY CXX_STANDARD 11)
-target_compile_definitions(microprofile PUBLIC MICROPROFILE_ENABLED=0 MICROPROFILE_GPU_TIMERS=0)
-set_property(TARGET microprofile PROPERTY FOLDER externals)
-
-if(WIN32)
-	add_library(nativefiledialog STATIC nativefiledialog-cmake/src/nfd_win.cpp nativefiledialog-cmake/src/nfd_common.c)
-	target_include_directories(nativefiledialog PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/nativefiledialog-cmake/src/include")
-elseif(APPLE)
-	add_library(nativefiledialog STATIC nativefiledialog-cmake/src/nfd_cocoa.m nativefiledialog-cmake/src/nfd_common.c)
-	target_include_directories(nativefiledialog PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/nativefiledialog-cmake/src/include")
-elseif(UNIX)
-	find_package(PkgConfig REQUIRED)
-	pkg_check_modules(GTK3 REQUIRED gtk+-3.0)
-
-	include_directories(${GTK3_INCLUDE_DIRS})
-	link_directories(${GTK3_LIBRARY_DIRS})
-
-	add_definitions(${GTK3_CFLAGS_OTHER})
-
-	add_library(nativefiledialog STATIC nativefiledialog-cmake/src/nfd_gtk.c nativefiledialog-cmake/src/nfd_common.c)
-	target_include_directories(nativefiledialog PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/nativefiledialog-cmake/src/include")
-	target_link_libraries(nativefiledialog ${GTK3_LIBRARIES})
-endif()
-set_property(TARGET nativefiledialog PROPERTY FOLDER externals)
 
 add_subdirectory(libfat16)
 set_property(TARGET FAT16 PROPERTY FOLDER externals)
@@ -183,13 +161,12 @@ option(YAML_CPP_INSTALL "Enable generation of install target" OFF)
 add_subdirectory(yaml-cpp EXCLUDE_FROM_ALL)
 set_property(TARGET yaml-cpp PROPERTY FOLDER externals)
 
-add_library(rpcs3 INTERFACE)
-target_include_directories(rpcs3 INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/rpcs3/include")
-
-if(NOT EXISTS "${CMAKE_BINARY_DIR}/external/discord_game_sdk.zip")
-message(STATUS "Downloading discord gamesdk...")
-file(DOWNLOAD https://dl-game-sdk.discordapp.net/2.5.6/discord_game_sdk.zip
-	"${CMAKE_BINARY_DIR}/external/discord_game_sdk.zip" SHOW_PROGRESS)
+if(USE_DISCORD_RICH_PRESENCE)
+	if(NOT EXISTS "${CMAKE_BINARY_DIR}/external/discord_game_sdk.zip")
+		message(STATUS "Downloading discord gamesdk...")
+		file(DOWNLOAD https://dl-game-sdk.discordapp.net/2.5.6/discord_game_sdk.zip
+		"${CMAKE_BINARY_DIR}/external/discord_game_sdk.zip" SHOW_PROGRESS)
+	endif()
 endif()
 
 if(USE_DISCORD_RICH_PRESENCE)
@@ -251,6 +228,7 @@ set_property(TARGET spirv-cross-glsl PROPERTY FOLDER externals)
 add_library(dlmalloc STATIC "${CMAKE_CURRENT_SOURCE_DIR}/dlmalloc/dlmalloc.cc")
 target_include_directories(dlmalloc PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/dlmalloc")
 target_compile_definitions(dlmalloc PUBLIC ONLY_MSPACES=1)
+target_compile_definitions(dlmalloc PUBLIC USE_LOCK=0)
 set_property(TARGET dlmalloc PROPERTY FOLDER externals)
 
 add_subdirectory(pugixml)
@@ -263,15 +241,13 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_
 endif()
 target_include_directories(CLI11 INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/cli11")
 
-if (USE_VULKAN)
-	find_package(Vulkan REQUIRED)
-	add_library(vulkan INTERFACE)
-	target_include_directories(vulkan INTERFACE ${Vulkan_INCLUDE_DIRS})
-	target_link_libraries(vulkan INTERFACE ${Vulkan_LIBRARIES})
+add_library(vulkan INTERFACE)
+target_include_directories(vulkan INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/Vulkan-Headers/include")
 
-	add_library(vma INTERFACE)
-	target_include_directories(vma INTERFACE VulkanMemoryAllocator/src)
-endif()
+add_library(vma INTERFACE)
+target_include_directories(vma INTERFACE 
+	"${CMAKE_CURRENT_SOURCE_DIR}/VulkanMemoryAllocator-Hpp/include"
+	"${CMAKE_CURRENT_SOURCE_DIR}/VulkanMemoryAllocator-Hpp/VulkanMemoryAllocator/include")
 
 add_subdirectory(ffmpeg)
 add_subdirectory(psvpfstools)
@@ -301,7 +277,53 @@ option(XXHASH_BUILD_XXHSUM "Build the xxhsum binary" OFF)
 add_subdirectory(xxHash/cmake_unofficial EXCLUDE_FROM_ALL)
 set_property(TARGET xxhash PROPERTY FOLDER externals)
 
-# Soundtouch audio processing library for timing, pitch and playback rate manipulation
-add_subdirectory(soundtouch)
-set_property(TARGET SoundTouch PROPERTY FOLDER externals)
-set_property(TARGET soundstretch PROPERTY FOLDER externals)
+# Tracy
+option(TRACY_ENABLE_ON_CORE_COMPONENTS
+		"Enable and require Tracy to compile core components such as the renderer, shader recompiler and
+		HLE modules"
+		ON)
+add_library(tracy STATIC tracy/TracyClient.cpp)
+set_property(TARGET tracy PROPERTY FOLDER externals)
+target_include_directories(tracy PUBLIC tracy)
+if(UNIX)
+	target_link_libraries(tracy PUBLIC pthread dl)
+endif()
+
+# Enable Tracy on-demand profiling mode to avoid unnecesary memory usage when the developer
+# isn't profiling by only enabling profiling after a connection has been established with
+# a Tracy server
+target_compile_definitions(tracy PUBLIC $<$<CONFIG:Debug,RelWithDebInfo>:TRACY_ON_DEMAND>)
+
+# Disable Tracy automated data collection in order to prevent Tracy-related code from being profiled
+target_compile_definitions(tracy PUBLIC TRACY_NO_SYSTEM_TRACING)
+
+# Defining TRACY_ENABLE for both compiling Tracy and compiling the project that links
+# against it is needed for Tracy to work
+#
+# -------------------------- Options (choose one at a time) ---------------------------
+#
+# A (DEFAULT). Enable Tracy on any target that links against if the build configuration 
+# is either Debug and RelWithDebInfo
+#
+# Using generator expresions instead of a conditional with CMAKE_BUILD_TYPE is needed
+# in order for the condition to work properly on both single-config and multi-config
+# CMake project generators. More info here:
+# https://cmake.org/cmake/help/latest/manual/cmake-buildsystem.7.html#build-configurations
+target_compile_definitions(tracy PUBLIC $<$<CONFIG:Debug,RelWithDebInfo>:TRACY_ENABLE>)
+#
+# ----------------------------------------------------------------------------------------
+#
+# B. Enable Tracy on every target that links to it regardless of the
+# build configuration:
+# 
+# target_compile_definitions(tracy PUBLIC TRACY_ENABLE)
+
+# Use XDG desktop portals on Linux
+set(NFD_PORTAL ON)
+
+# nativefiledialog-extended
+add_subdirectory(nativefiledialog-extended)
+
+# Create alias to prevent the need of multiple changes in case the target name changes
+add_library(NFDe::NFDe ALIAS nfd)
+set_property(TARGET nfd PROPERTY FOLDER externals)

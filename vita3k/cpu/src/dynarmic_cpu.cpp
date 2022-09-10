@@ -15,6 +15,7 @@
 // with this program; if not, write to the Free Software Foundation, Inc.,
 // 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
+#include "cpu/common.h"
 #include <cpu/disasm/functions.h>
 #include <cpu/impl/dynarmic_cpu.h>
 #include <cpu/impl/interface.h>
@@ -98,7 +99,7 @@ public:
 
     ~ArmDynarmicCallback() override = default;
 
-    uint32_t MemoryReadCode(Dynarmic::A32::VAddr addr) override {
+    std::optional<std::uint32_t> MemoryReadCode(Dynarmic::A32::VAddr addr) override {
         if (cpu->log_mem)
             LOG_TRACE("Instruction fetch at addr 0x{:X}", addr);
         return MemoryRead32(addr);
@@ -125,8 +126,14 @@ public:
     template <typename T>
     T MemoryRead(Dynarmic::A32::VAddr addr) {
         Ptr<T> ptr{ addr };
-        if (!ptr || !ptr.valid(*parent->mem)) {
-            LOG_WARN("Invalid read of uint{}_t at address: 0x{:x}", sizeof(T) * 8, addr);
+        if (!ptr || !ptr.valid(*parent->mem) || ptr.address() < parent->mem->page_size) {
+            LOG_ERROR("Invalid read of uint{}_t at address: 0x{:x}\n{}", sizeof(T) * 8, addr, this->cpu->save_context().description());
+
+            auto pc = this->cpu->get_pc();
+            if (pc < parent->mem->page_size)
+                LOG_CRITICAL("PC is 0x{:x}", pc);
+            else
+                LOG_ERROR("Executing: {}", disassemble(*parent, pc, nullptr));
             return 0;
         }
 
@@ -156,8 +163,14 @@ public:
     template <typename T>
     void MemoryWrite(Dynarmic::A32::VAddr addr, T value) {
         Ptr<T> ptr{ addr };
-        if (!ptr || !ptr.valid(*parent->mem)) {
-            LOG_WARN("Invalid write of uint{}_t at addr: 0x{:x}, val = 0x{:x}", sizeof(T) * 8, addr, value);
+        if (!ptr || !ptr.valid(*parent->mem) || ptr.address() < parent->mem->page_size) {
+            LOG_ERROR("Invalid write of uint{}_t at addr: 0x{:x}, val = 0x{:x}\n{}", sizeof(T) * 8, addr, value, this->cpu->save_context().description());
+
+            auto pc = this->cpu->get_pc();
+            if (pc < parent->mem->page_size)
+                LOG_CRITICAL("PC is 0x{:x}", pc);
+            else
+                LOG_ERROR("Executing: {}", disassemble(*parent, pc, nullptr));
             return;
         }
 
@@ -241,13 +254,13 @@ public:
         case Dynarmic::A32::Exception::UndefinedInstruction:
         case Dynarmic::A32::Exception::UnpredictableInstruction:
         case Dynarmic::A32::Exception::DecodeError: {
-            LOG_WARN("Undefined/Unpredictable instruction at addr 0x{:X}, inst 0x{:X} ({})", pc, MemoryReadCode(pc), disassemble(*parent, pc, nullptr));
+            LOG_WARN("Undefined/Unpredictable instruction at addr 0x{:X}, inst 0x{:X} ({})", pc, MemoryReadCode(pc).value(), disassemble(*parent, pc, nullptr));
             InterpreterFallback(pc, 1);
             break;
         }
         default:
             LOG_WARN("Unknown exception {} Raised at pc = 0x{:x}", static_cast<size_t>(exception), pc);
-            LOG_TRACE("at addr 0x{:X}, inst 0x{:X} ({})", pc, MemoryReadCode(pc), disassemble(*parent, pc, nullptr));
+            LOG_TRACE("at addr 0x{:X}, inst 0x{:X} ({})", pc, MemoryReadCode(pc).value(), disassemble(*parent, pc, nullptr));
         }
     }
 

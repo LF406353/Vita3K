@@ -19,8 +19,6 @@
 
 #include <util/types.h>
 
-#include <rpcs3/BitField.h>
-
 #define SCE_GXM_DEFAULT_UNIFORM_BUFFER_CONTAINER_INDEX 0xE
 #define SCE_GXM_GPU_CORE_COUNT 4U
 #define SCE_GXM_MAX_VERTEX_STREAMS 16
@@ -46,7 +44,7 @@ enum SceGxmContextType {
     SCE_GXM_CONTEXT_TYPE_DEFERRED
 };
 
-enum SceGxmColorMask {
+enum SceGxmColorMask : uint8_t {
     SCE_GXM_COLOR_MASK_NONE = 0,
     SCE_GXM_COLOR_MASK_A = (1 << 0),
     SCE_GXM_COLOR_MASK_R = (1 << 1),
@@ -55,7 +53,7 @@ enum SceGxmColorMask {
     SCE_GXM_COLOR_MASK_ALL = (SCE_GXM_COLOR_MASK_A | SCE_GXM_COLOR_MASK_B | SCE_GXM_COLOR_MASK_G | SCE_GXM_COLOR_MASK_R)
 };
 
-enum SceGxmBlendFunc {
+enum SceGxmBlendFunc : uint8_t {
     SCE_GXM_BLEND_FUNC_NONE,
     SCE_GXM_BLEND_FUNC_ADD,
     SCE_GXM_BLEND_FUNC_SUBTRACT,
@@ -64,7 +62,7 @@ enum SceGxmBlendFunc {
     SCE_GXM_BLEND_FUNC_MAX
 };
 
-enum SceGxmBlendFactor {
+enum SceGxmBlendFactor : uint8_t {
     SCE_GXM_BLEND_FACTOR_ZERO,
     SCE_GXM_BLEND_FACTOR_ONE,
     SCE_GXM_BLEND_FACTOR_SRC_COLOR,
@@ -158,7 +156,7 @@ enum SceGxmPolygonMode {
     SCE_GXM_POLYGON_MODE_TRIANGLE_POINT = 0x00030000u
 };
 
-enum SceGxmPrimitiveType {
+enum SceGxmPrimitiveType : uint32_t {
     SCE_GXM_PRIMITIVE_TRIANGLES = 0x00000000u,
     SCE_GXM_PRIMITIVE_LINES = 0x04000000u,
     SCE_GXM_PRIMITIVE_POINTS = 0x08000000u,
@@ -233,7 +231,7 @@ enum SceGxmParameterSemantic {
     SCE_GXM_PARAMETER_SEMANTIC_INSTANCE
 };
 
-enum SceGxmTextureType {
+enum SceGxmTextureType : unsigned int {
     SCE_GXM_TEXTURE_SWIZZLED = 0x00000000u,
     SCE_GXM_TEXTURE_CUBE = 0x40000000u,
     SCE_GXM_TEXTURE_LINEAR = 0x60000000u,
@@ -386,6 +384,11 @@ enum SceGxmTextureBaseFormat {
     SCE_GXM_TEXTURE_BASE_FORMAT_U8U8U8 = 0x98000000,
     SCE_GXM_TEXTURE_BASE_FORMAT_S8S8S8 = 0x99000000,
     SCE_GXM_TEXTURE_BASE_FORMAT_U2F10F10F10 = 0x9A000000
+};
+
+template <typename T>
+constexpr static inline uint32_t operator|(const SceGxmTextureBaseFormat a, const T b) {
+    return static_cast<uint32_t>(a) | static_cast<uint32_t>(b);
 };
 
 enum SceGxmTextureFormat {
@@ -810,6 +813,11 @@ enum SceGxmColorBaseFormat {
     SCE_GXM_COLOR_BASE_FORMAT_U2F10F10F10 = 0x41000000
 };
 
+template <typename T>
+constexpr static inline uint32_t operator|(const SceGxmColorBaseFormat a, const T b) {
+    return static_cast<uint32_t>(a) | static_cast<uint32_t>(b);
+};
+
 enum SceGxmColorFormat {
 
     SCE_GXM_COLOR_FORMAT_U8U8U8U8_ABGR = SCE_GXM_COLOR_BASE_FORMAT_U8U8U8U8 | SCE_GXM_COLOR_SWIZZLE4_ABGR,
@@ -924,7 +932,7 @@ enum SceGxmColorSurfaceType {
     SCE_GXM_COLOR_SURFACE_SWIZZLED = 0x08000000u
 };
 
-enum SceGxmColorSurfaceGammaMode {
+enum SceGxmColorSurfaceGammaMode : uint32_t {
     SCE_GXM_COLOR_SURFACE_GAMMA_NONE = 0x00000000u,
     SCE_GXM_COLOR_SURFACE_GAMMA_R = 0x00001000u,
     SCE_GXM_COLOR_SURFACE_GAMMA_GR = 0x00003000u,
@@ -1020,9 +1028,19 @@ enum SceGxmDepthStencilForceLoadMode {
     SCE_GXM_DEPTH_STENCIL_FORCE_LOAD_ENABLED = 0x00000002u
 };
 
+template <typename T>
+constexpr static inline uint32_t operator|(const SceGxmDepthStencilForceLoadMode a, const T b) {
+    return static_cast<uint32_t>(a) | static_cast<uint32_t>(b);
+};
+
 enum SceGxmDepthStencilForceStoreMode {
     SCE_GXM_DEPTH_STENCIL_FORCE_STORE_DISABLED = 0x00000000u,
     SCE_GXM_DEPTH_STENCIL_FORCE_STORE_ENABLED = 0x00000004u
+};
+
+template <typename T>
+constexpr static inline uint32_t operator|(const SceGxmDepthStencilForceStoreMode a, const T b) {
+    return static_cast<uint32_t>(a) | static_cast<uint32_t>(b);
 };
 
 enum SceGxmColorSurfaceDitherMode {
@@ -1085,6 +1103,7 @@ enum SceGxmErrorCode {
     SCE_GXM_ERROR_INVALID_PRECOMPUTED_VERTEX_STATE = 0x805B0015,
     SCE_GXM_ERROR_INVALID_PRECOMPUTED_FRAGMENT_STATE = 0x805B0016,
     SCE_GXM_ERROR_DRIVER = 0x805B0017,
+    SCE_GXM_ERROR_INVALID_THREAD = 0x805B0018,
     SCE_GXM_ERROR_WITHIN_COMMAND_LIST = 0x805B002C,
     SCE_GXM_ERROR_NOT_WITHIN_COMMAND_LIST = 0x805B002D
 };
@@ -1221,8 +1240,8 @@ struct SceGxmProgramVertexVaryings {
     union {
         // Vertex Program variables
         struct {
-            uint32_t attrib_pa_regs[2];
-            uint32_t untyped_pa_regs[2];
+            uint64_t attrib_pa_regs;
+            uint64_t untyped_pa_regs;
         };
 
         // Fragment Program Variables
@@ -1411,12 +1430,15 @@ struct SceGxmProgram {
 
 struct SceGxmProgramParameter {
     int32_t name_offset; // Number of bytes from the start of this structure to the name string.
-    union {
-        bf_t<uint16_t, 0, 4> category; // SceGxmParameterCategory
-        bf_t<uint16_t, 4, 4> type; // SceGxmParameterType - applicable for constants, not applicable for samplers (select type like float, half, fixed ...)
-        bf_t<uint16_t, 8, 4> component_count; // applicable for constants, not applicable for samplers (select size like float2, float3, float3 ...)
-        bf_t<uint16_t, 12, 4> container_index; // applicable for constants, not applicable for samplers (buffer, default, texture)
+
+    struct {
+        // Each member is half a bit wide, so the values are [0-15], [0,F]
+        uint8_t category : 4; // SceGxmParameterCategory
+        uint8_t type : 4; // SceGxmParameterType - applicable for constants, not applicable for samplers (select type like float, half, fixed ...)
+        uint8_t component_count : 4; // applicable for constants, not applicable for samplers (select size like float2, float3, float3 ...)
+        uint8_t container_index : 4; // applicable for constants, not applicable for samplers (buffer, default, texture)
     };
+
     uint8_t semantic; // applicable only for for vertex attributes, for everything else it's 0
     uint8_t semantic_index;
     uint32_t array_size;
@@ -1450,4 +1472,5 @@ enum {
     SCE_GXM_PRECOMPUTED_VERTEX_STATE_WORD_COUNT = 7,
     SCE_GXM_PRECOMPUTED_FRAGMENT_STATE_WORD_COUNT = 9,
     SCE_GXM_PRECOMPUTED_DRAW_WORD_COUNT = 11,
+    SCE_GXM_MAX_UB_IN_FLOAT_UNIT = 2048 // Guessing
 };

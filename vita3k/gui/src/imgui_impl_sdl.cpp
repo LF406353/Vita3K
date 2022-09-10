@@ -17,39 +17,97 @@
 
 #include <gui/imgui_impl_sdl.h>
 #include <gui/imgui_impl_sdl_gl3.h>
-#ifdef USE_VULKAN
 #include <gui/imgui_impl_sdl_vulkan.h>
-#endif
 
 #include <renderer/state.h>
 #include <util/log.h>
 
 #include <SDL.h>
-#ifdef USE_VULKAN
+#include <SDL_syswm.h>
 #include <SDL_vulkan.h>
-#endif
+
+static const char *ImGui_ImplSdl_GetClipboardText(void *) {
+    return SDL_GetClipboardText();
+}
+
+static void ImGui_ImplSdl_SetClipboardText(void *, const char *text) {
+    SDL_SetClipboardText(text);
+}
 
 IMGUI_API ImGui_State *ImGui_ImplSdl_Init(renderer::State *renderer, SDL_Window *window, const std::string &base_path) {
+    ImGui_State *state;
+
     switch (renderer->current_backend) {
     case renderer::Backend::OpenGL:
-        return dynamic_cast<ImGui_State *>(ImGui_ImplSdlGL3_Init(renderer, window, nullptr));
-#ifdef USE_VULKAN
+        state = reinterpret_cast<ImGui_State *>(ImGui_ImplSdlGL3_Init(renderer, window, nullptr));
+        break;
+
     case renderer::Backend::Vulkan:
-        return dynamic_cast<ImGui_State *>(ImGui_ImplSdlVulkan_Init(renderer, window, base_path));
-#endif
+        state = reinterpret_cast<ImGui_State *>(ImGui_ImplSdlVulkan_Init(renderer, window, base_path));
+        break;
+
     default:
         LOG_ERROR("Missing ImGui init for backend {}.", static_cast<int>(renderer->current_backend));
         return nullptr;
     }
+
+    // Setup back-end capabilities flags
+    ImGuiIO &io = ImGui::GetIO();
+    io.BackendFlags |= ImGuiBackendFlags_HasMouseCursors; // We can honor GetMouseCursor() values (optional)
+
+    // Keyboard mapping. ImGui will use those indices to peek into the io.KeyDown[] array.
+    io.KeyMap[ImGuiKey_Tab] = SDL_SCANCODE_TAB;
+    io.KeyMap[ImGuiKey_LeftArrow] = SDL_SCANCODE_LEFT;
+    io.KeyMap[ImGuiKey_RightArrow] = SDL_SCANCODE_RIGHT;
+    io.KeyMap[ImGuiKey_UpArrow] = SDL_SCANCODE_UP;
+    io.KeyMap[ImGuiKey_DownArrow] = SDL_SCANCODE_DOWN;
+    io.KeyMap[ImGuiKey_PageUp] = SDL_SCANCODE_PAGEUP;
+    io.KeyMap[ImGuiKey_PageDown] = SDL_SCANCODE_PAGEDOWN;
+    io.KeyMap[ImGuiKey_Home] = SDL_SCANCODE_HOME;
+    io.KeyMap[ImGuiKey_End] = SDL_SCANCODE_END;
+    io.KeyMap[ImGuiKey_Insert] = SDL_SCANCODE_INSERT;
+    io.KeyMap[ImGuiKey_Delete] = SDL_SCANCODE_DELETE;
+    io.KeyMap[ImGuiKey_Backspace] = SDL_SCANCODE_BACKSPACE;
+    io.KeyMap[ImGuiKey_Space] = SDL_SCANCODE_SPACE;
+    io.KeyMap[ImGuiKey_Enter] = SDL_SCANCODE_RETURN;
+    io.KeyMap[ImGuiKey_Escape] = SDL_SCANCODE_ESCAPE;
+    io.KeyMap[ImGuiKey_A] = SDL_SCANCODE_A;
+    io.KeyMap[ImGuiKey_C] = SDL_SCANCODE_C;
+    io.KeyMap[ImGuiKey_V] = SDL_SCANCODE_V;
+    io.KeyMap[ImGuiKey_X] = SDL_SCANCODE_X;
+    io.KeyMap[ImGuiKey_Y] = SDL_SCANCODE_Y;
+    io.KeyMap[ImGuiKey_Z] = SDL_SCANCODE_Z;
+
+    io.SetClipboardTextFn = ImGui_ImplSdl_SetClipboardText;
+    io.GetClipboardTextFn = ImGui_ImplSdl_GetClipboardText;
+    io.ClipboardUserData = NULL;
+
+    state->mouse_cursors[ImGuiMouseCursor_Arrow] = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW);
+    state->mouse_cursors[ImGuiMouseCursor_TextInput] = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_IBEAM);
+    state->mouse_cursors[ImGuiMouseCursor_ResizeAll] = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_SIZEALL);
+    state->mouse_cursors[ImGuiMouseCursor_ResizeNS] = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_SIZENS);
+    state->mouse_cursors[ImGuiMouseCursor_ResizeEW] = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_SIZEWE);
+    state->mouse_cursors[ImGuiMouseCursor_ResizeNESW] = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_SIZENESW);
+    state->mouse_cursors[ImGuiMouseCursor_ResizeNWSE] = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_SIZENWSE);
+
+    // TODO: is this needed/useful ?
+#ifdef _WIN32
+    SDL_SysWMinfo wmInfo;
+    SDL_VERSION(&wmInfo.version);
+    SDL_GetWindowWMInfo(state->window, &wmInfo);
+    io.ImeWindowHandle = wmInfo.info.win.window;
+#endif
+
+    return state;
 }
 IMGUI_API void ImGui_ImplSdl_Shutdown(ImGui_State *state) {
     switch (state->renderer->current_backend) {
     case renderer::Backend::OpenGL:
         return ImGui_ImplSdlGL3_Shutdown(dynamic_cast<ImGui_GLState &>(*state));
-#ifdef USE_VULKAN
+
     case renderer::Backend::Vulkan:
         return ImGui_ImplSdlVulkan_Shutdown(dynamic_cast<ImGui_VulkanState &>(*state));
-#endif
+
     default:
         LOG_ERROR("Missing ImGui init for backend {}.", static_cast<int>(state->renderer->current_backend));
     }
@@ -80,21 +138,8 @@ IMGUI_API void ImGui_ImplSdl_NewFrame(ImGui_State *state) {
     io.MouseDown[2] = state->mouse_pressed[2] || (mouse_buttons & SDL_BUTTON(SDL_BUTTON_MIDDLE)) != 0;
     state->mouse_pressed[0] = state->mouse_pressed[1] = state->mouse_pressed[2] = false;
 
-// We need to use SDL_CaptureMouse() to easily retrieve mouse coordinates outside of the client area. This is only supported from SDL 2.0.4 (released Jan 2016)
-#if (SDL_MAJOR_VERSION >= 2) && (SDL_MINOR_VERSION >= 0) && (SDL_PATCHLEVEL >= 4)
-    if ((SDL_GetWindowFlags(state->window) & (SDL_WINDOW_MOUSE_FOCUS | SDL_WINDOW_MOUSE_CAPTURE)) != 0)
+    if ((SDL_GetWindowFlags(state->window) & SDL_WINDOW_INPUT_FOCUS) != 0)
         io.MousePos = ImVec2((float)mx, (float)my);
-    bool any_mouse_button_down = false;
-    for (int n = 0; n < IM_ARRAYSIZE(io.MouseDown); n++)
-        any_mouse_button_down |= io.MouseDown[n];
-    if (any_mouse_button_down && (SDL_GetWindowFlags(state->window) & SDL_WINDOW_MOUSE_CAPTURE) == 0)
-        SDL_CaptureMouse(SDL_TRUE);
-    if (!any_mouse_button_down && (SDL_GetWindowFlags(state->window) & SDL_WINDOW_MOUSE_CAPTURE) != 0)
-        SDL_CaptureMouse(SDL_FALSE);
-#else
-    if ((SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS) != 0)
-        io.MousePos = ImVec2((float)mx, (float)my);
-#endif
 
     // Update OS/hardware mouse cursor if imgui isn't drawing a software cursor
     if ((io.ConfigFlags & ImGuiConfigFlags_NoMouseCursorChange) == 0) {
@@ -114,10 +159,9 @@ IMGUI_API void ImGui_ImplSdl_RenderDrawData(ImGui_State *state) {
     switch (state->renderer->current_backend) {
     case renderer::Backend::OpenGL:
         return ImGui_ImplSdlGL3_RenderDrawData(dynamic_cast<ImGui_GLState &>(*state));
-#ifdef USE_VULKAN
+
     case renderer::Backend::Vulkan:
         return ImGui_ImplSdlVulkan_RenderDrawData(dynamic_cast<ImGui_VulkanState &>(*state));
-#endif
     }
 }
 
@@ -173,11 +217,11 @@ IMGUI_API void ImGui_ImplSdl_GetDrawableSize(ImGui_State *state, int &width, int
     case renderer::Backend::OpenGL:
         SDL_GL_GetDrawableSize(state->window, &width, &height);
         break;
-#ifdef USE_VULKAN
+
     case renderer::Backend::Vulkan:
         SDL_Vulkan_GetDrawableSize(state->window, &width, &height);
         break;
-#endif
+
     default:
         LOG_ERROR("Missing ImGui init for backend {}.", static_cast<int>(state->renderer->current_backend));
     }
@@ -187,10 +231,10 @@ IMGUI_API ImTextureID ImGui_ImplSdl_CreateTexture(ImGui_State *state, void *data
     switch (state->renderer->current_backend) {
     case renderer::Backend::OpenGL:
         return ImGui_ImplSdlGL3_CreateTexture(data, width, height);
-#ifdef USE_VULKAN
+
     case renderer::Backend::Vulkan:
         return ImGui_ImplSdlVulkan_CreateTexture(dynamic_cast<ImGui_VulkanState &>(*state), data, width, height);
-#endif
+
     default:
         LOG_ERROR("Missing ImGui init for backend {}.", static_cast<int>(state->renderer->current_backend));
         return (void *)0;
@@ -201,10 +245,10 @@ IMGUI_API void ImGui_ImplSdl_DeleteTexture(ImGui_State *state, ImTextureID textu
     switch (state->renderer->current_backend) {
     case renderer::Backend::OpenGL:
         return ImGui_ImplSdlGL3_DeleteTexture(texture);
-#ifdef USE_VULKAN
+
     case renderer::Backend::Vulkan:
         return ImGui_ImplSdlVulkan_DeleteTexture(dynamic_cast<ImGui_VulkanState &>(*state), texture);
-#endif
+
     default:
         LOG_ERROR("Missing ImGui init for backend {}.", static_cast<int>(state->renderer->current_backend));
     }
@@ -215,10 +259,10 @@ IMGUI_API void ImGui_ImplSdl_InvalidateDeviceObjects(ImGui_State *state) {
     switch (state->renderer->current_backend) {
     case renderer::Backend::OpenGL:
         return ImGui_ImplSdlGL3_InvalidateDeviceObjects(dynamic_cast<ImGui_GLState &>(*state));
-#ifdef USE_VULKAN
+
     case renderer::Backend::Vulkan:
         return ImGui_ImplSdlVulkan_InvalidateDeviceObjects(dynamic_cast<ImGui_VulkanState &>(*state));
-#endif
+
     default:
         LOG_ERROR("Missing ImGui init for backend {}.", static_cast<int>(state->renderer->current_backend));
     }
@@ -227,10 +271,10 @@ IMGUI_API bool ImGui_ImplSdl_CreateDeviceObjects(ImGui_State *state) {
     switch (state->renderer->current_backend) {
     case renderer::Backend::OpenGL:
         return ImGui_ImplSdlGL3_CreateDeviceObjects(dynamic_cast<ImGui_GLState &>(*state));
-#ifdef USE_VULKAN
+
     case renderer::Backend::Vulkan:
         return ImGui_ImplSdlVulkan_CreateDeviceObjects(dynamic_cast<ImGui_VulkanState &>(*state));
-#endif
+
     default:
         LOG_ERROR("Missing ImGui init for backend {}.", static_cast<int>(state->renderer->current_backend));
         return false;

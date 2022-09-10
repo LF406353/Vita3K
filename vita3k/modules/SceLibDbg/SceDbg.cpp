@@ -17,25 +17,26 @@
 
 #include "SceDbg.h"
 
+#include <kernel/state.h>
 #include <util/lock_and_find.h>
 #include <v3kprintf.h>
 
 EXPORT(int, sceDbgAssertionHandler, const char *filename, int line, bool do_stop, const char *component, module::vargs messages) {
-    const ThreadStatePtr thread = lock_and_find(thread_id, host.kernel.threads, host.kernel.mutex);
+    const ThreadStatePtr thread = lock_and_find(thread_id, emuenv.kernel.threads, emuenv.kernel.mutex);
 
     if (!thread) {
         return SCE_KERNEL_ERROR_UNKNOWN_THREAD_ID;
     }
 
-    std::vector<char> buffer(KB(1));
+    std::vector<char> buffer(KiB(1));
 
-    const char *main_message = messages.next<Ptr<const char>>(*(thread->cpu), host.mem).get(host.mem);
-    const int result = utils::snprintf(buffer.data(), buffer.size(), main_message, *(thread->cpu), host.mem, messages);
+    const char *main_message = messages.next<Ptr<const char>>(*(thread->cpu), emuenv.mem).get(emuenv.mem);
+    const int result = utils::snprintf(buffer.data(), buffer.size(), main_message, *(thread->cpu), emuenv.mem, messages);
 
     LOG_INFO("file {}, line {}, {}", filename, line, buffer.data());
 
     if (do_stop)
-        host.kernel.exit_delete_all_threads();
+        emuenv.kernel.exit_delete_all_threads();
 
     if (!result) {
         return SCE_KERNEL_ERROR_INVALID_ARGUMENT;
@@ -47,7 +48,7 @@ EXPORT(int, sceDbgAssertionHandler, const char *filename, int line, bool do_stop
 }
 
 EXPORT(int, sceDbgLoggingHandler, const char *pFile, int line, int severity, const char *pComponent, module::vargs messages) {
-    const ThreadStatePtr thread = lock_and_find(thread_id, host.kernel.threads, host.kernel.mutex);
+    const ThreadStatePtr thread = lock_and_find(thread_id, emuenv.kernel.threads, emuenv.kernel.mutex);
 
     if (!thread) {
         return SCE_KERNEL_ERROR_UNKNOWN_THREAD_ID;
@@ -63,10 +64,10 @@ EXPORT(int, sceDbgLoggingHandler, const char *pFile, int line, int severity, con
         output += fmt::format(", FILE:{}, LINE:{}", pFile, line);
     }
 
-    std::vector<char> buffer(KB(1));
+    std::vector<char> buffer(KiB(1));
 
-    const char *main_message = messages.next<Ptr<const char>>(*(thread->cpu), host.mem).get(host.mem);
-    const int result = utils::snprintf(buffer.data(), buffer.size(), main_message, *(thread->cpu), host.mem, messages);
+    const char *main_message = messages.next<Ptr<const char>>(*(thread->cpu), emuenv.mem).get(emuenv.mem);
+    const int result = utils::snprintf(buffer.data(), buffer.size(), main_message, *(thread->cpu), emuenv.mem, messages);
 
     if (result) {
         output += fmt::format(" {}", buffer.data());

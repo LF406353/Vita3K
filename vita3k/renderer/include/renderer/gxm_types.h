@@ -36,9 +36,12 @@ struct VertexProgram;
 
 struct SceGxmColorSurface {
     // opaque start
-    uint32_t disabled : 1;
-    uint32_t downscale : 1;
-    uint32_t pad : 30;
+    struct {
+        uint32_t disabled : 1;
+        uint32_t downscale : 1;
+        uint32_t gamma : 2;
+        uint32_t : 28;
+    };
     uint32_t width;
     uint32_t height;
     uint32_t strideInPixels;
@@ -53,10 +56,12 @@ struct SceGxmColorSurface {
 static_assert(sizeof(SceGxmColorSurface) == (32 + sizeof(SceGxmTexture)), "Incorrect size.");
 
 struct SceGxmDepthStencilControl {
-    bool disabled;
-    SceGxmDepthStencilFormat format;
-    bool backgroundMask = true;
-    uint8_t backgroundStencil;
+    uint32_t content;
+
+    static constexpr uint32_t format_bits = ~0xFFF;
+    static constexpr uint32_t stencil_bits = 0xF;
+    static constexpr uint32_t mask_bit = 0x10;
+    static constexpr uint32_t disabled_bit = 0x20;
 };
 
 struct SceGxmDepthStencilSurface {
@@ -64,7 +69,7 @@ struct SceGxmDepthStencilSurface {
     Ptr<void> depthData;
     Ptr<void> stencilData;
     float backgroundDepth = 1.0f;
-    Ptr<SceGxmDepthStencilControl> control;
+    SceGxmDepthStencilControl control;
 };
 
 struct SceGxmContextParams {
@@ -97,8 +102,8 @@ struct SceGxmDeferredContextParams {
 };
 
 typedef std::array<Ptr<const void>, 15> UniformBuffers;
-typedef std::array<SceGxmTexture, SCE_GXM_MAX_TEXTURE_UNITS * 2> TextureDatas;
-typedef std::array<Ptr<const void>, SCE_GXM_MAX_VERTEX_STREAMS> StreamDatas;
+typedef SceGxmTexture TextureData;
+typedef Ptr<const void> StreamData;
 
 struct GxmViewport {
     SceGxmViewportMode enable = SCE_GXM_VIEWPORT_ENABLED;
@@ -123,10 +128,18 @@ enum class SceGxmLastReserveStatus {
 };
 
 struct SceGxmSyncObject {
-    std::uint32_t done;
+    // timestamp_current is the timestamp for what has already been processed by the renderer
+    std::atomic<uint32_t> timestamp_current;
+    // timestamp_ahead is the timestamp for everything that has been asked to SceGxm so far (timestamp_ahead >= timestamp_current)
+    std::atomic<uint32_t> timestamp_ahead;
+
+    // timestamp for the last time the object was displayed
+    std::uint32_t last_display;
 
     std::mutex lock;
     std::condition_variable cond;
+    // some extra space for additional data, on the Vulkan renderer this points to a RenderTarget* a,d a vector of fences
+    void *extra;
 };
 
 struct GxmContextState {
@@ -167,7 +180,7 @@ struct GxmContextState {
     uint32_t vdm_buffer_size;
 
     // Vertex streams.
-    StreamDatas stream_data;
+    std::array<StreamData, SCE_GXM_MAX_VERTEX_STREAMS> stream_data;
 
     // Depth.
     SceGxmDepthFunc front_depth_func = SCE_GXM_DEPTH_FUNC_LESS_EQUAL;
@@ -198,7 +211,7 @@ struct GxmContextState {
     int back_depth_bias_units = 0;
 
     // Textures.
-    TextureDatas textures;
+    std::array<TextureData, SCE_GXM_MAX_TEXTURE_UNITS * 2> textures;
 
     // Mask
     bool writing_mask;
@@ -227,7 +240,7 @@ struct SceGxmFragmentProgram {
 };
 
 struct SceGxmNotification {
-    Ptr<volatile uint32_t> address;
+    Ptr<uint32_t> address;
     uint32_t value;
 };
 
@@ -271,16 +284,15 @@ struct SceGxmVertexProgram {
     std::vector<SceGxmVertexStream> streams;
     std::vector<SceGxmVertexAttribute> attributes;
     std::unique_ptr<renderer::VertexProgram> renderer_data;
+    uint64_t key_hash;
 };
-
-static constexpr size_t SCE_GXM_PRECOMPUTED_DRAW_EXTRA_SIZE = sizeof(StreamDatas);
 
 struct SceGxmPrecomputedDraw {
     Ptr<const SceGxmVertexProgram> program;
 
     SceGxmPrimitiveType type;
 
-    Ptr<StreamDatas> stream_data;
+    Ptr<StreamData> stream_data;
     uint16_t stream_count;
 
     SceGxmIndexFormat index_format;
@@ -289,12 +301,10 @@ struct SceGxmPrecomputedDraw {
     uint32_t instance_count;
 };
 
-static constexpr size_t SCE_GXM_PRECOMPUTED_STATE_EXTRA_SIZE = sizeof(TextureDatas) + sizeof(UniformBuffers);
-
 struct SceGxmPrecomputedFragmentState {
     Ptr<const SceGxmFragmentProgram> program;
 
-    Ptr<TextureDatas> textures;
+    Ptr<TextureData> textures;
     uint16_t texture_count;
 
     Ptr<UniformBuffers> uniform_buffers;
@@ -303,7 +313,7 @@ struct SceGxmPrecomputedFragmentState {
 struct SceGxmPrecomputedVertexState {
     Ptr<const SceGxmVertexProgram> program;
 
-    Ptr<TextureDatas> textures;
+    Ptr<TextureData> textures;
     uint16_t texture_count;
 
     Ptr<UniformBuffers> uniform_buffers;
@@ -312,3 +322,13 @@ struct SceGxmPrecomputedVertexState {
 static_assert(SCE_GXM_PRECOMPUTED_DRAW_WORD_COUNT * sizeof(uint32_t) >= sizeof(SceGxmPrecomputedDraw), "Precomputed Draw Size Too Big");
 static_assert(SCE_GXM_PRECOMPUTED_VERTEX_STATE_WORD_COUNT * sizeof(uint32_t) >= sizeof(SceGxmPrecomputedVertexState), "Precomputed Vertex State Size Too Big");
 static_assert(SCE_GXM_PRECOMPUTED_FRAGMENT_STATE_WORD_COUNT * sizeof(uint32_t) >= sizeof(SceGxmPrecomputedFragmentState), "Precomputed Fragment State Size Too Big");
+
+struct SceGxmTransferImage {
+    SceGxmTransferFormat format;
+    Ptr<void> address;
+    uint32_t x;
+    uint32_t y;
+    uint32_t width;
+    uint32_t height;
+    int32_t stride;
+};

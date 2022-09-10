@@ -50,7 +50,7 @@ bool ThreadSignal::send() {
     return true;
 }
 
-int ThreadState::init(KernelState &kernel, const char *name, Ptr<const void> entry_point, int init_priority, int stack_size, const SceKernelThreadOptParam *option = nullptr) {
+int ThreadState::init(KernelState &kernel, const char *name, Ptr<const void> entry_point, int init_priority, SceInt32 affinity_mask, int stack_size, const SceKernelThreadOptParam *option = nullptr) {
     constexpr size_t KERNEL_TLS_SIZE = 0x800;
 
     this->name = name;
@@ -68,8 +68,10 @@ int ThreadState::init(KernelState &kernel, const char *name, Ptr<const void> ent
     } else {
         priority = init_priority;
     }
+    this->affinity_mask = affinity_mask;
     this->stack_size = stack_size;
     start_tick = rtc_get_ticks(kernel.base_tick.tick);
+    last_vblank_waited = 0;
 
     cpu = init_cpu(kernel.cpu_backend, kernel.cpu_opt, id, static_cast<std::size_t>(core_num), mem, kernel.cpu_protocol.get());
     if (!cpu) {
@@ -200,6 +202,7 @@ bool ThreadState::run_loop() {
             current_job = run_queue.begin();
             if (!current_job->in_progress) {
                 push_arguments(*current_job);
+                set_thread_id(*cpu, id);
                 load_context(*cpu, current_job->ctx);
                 current_job->in_progress = true;
             }
@@ -220,7 +223,7 @@ bool ThreadState::run_loop() {
                 continue;
 
             if (res < 0) {
-                LOG_ERROR("Thread {} experienced a unicorn error.", name);
+                LOG_ERROR("Thread {} ({}) experienced a unicorn error.", name, cpu->thread_id);
                 if (current_job->notify) {
                     current_job->notify(0xDEADDEAD);
                 }
@@ -344,6 +347,7 @@ void ThreadState::clear_run_queue() {
     }
 }
 
+// callback run after HLE call on the same thread
 void ThreadState::request_callback(Address callback_address, const std::vector<uint32_t> &args, const std::function<void(int res)> notify) {
     const auto thread_lock = std::lock_guard(mutex);
     ThreadJob job;
@@ -365,8 +369,12 @@ void ThreadState::suspend() {
 }
 
 void ThreadState::resume(bool step) {
-    assert(to_do == ThreadToDo::wait);
-    to_do = step ? ThreadToDo::step : ThreadToDo::run;
+    assert(to_do == ThreadToDo::wait || to_do == ThreadToDo::suspend);
+
+    {
+        const auto thread_lock = std::lock_guard(mutex);
+        to_do = step ? ThreadToDo::step : ThreadToDo::run;
+    }
     something_to_do.notify_one();
 }
 

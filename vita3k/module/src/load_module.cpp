@@ -17,10 +17,12 @@
 
 #include <module/load_module.h>
 
-#include <host/state.h>
+#include <config/state.h>
+#include <emuenv/state.h>
 #include <kernel/load_self.h>
+#include <kernel/state.h>
 
-bool is_lle_module(SceSysmoduleModuleId module_id, HostState &host) {
+bool is_lle_module(SceSysmoduleModuleId module_id, EmuEnvState &emuenv) {
     const auto paths = sysmodule_paths[module_id];
 
     // Do we know the module and its dependencies' paths?
@@ -32,20 +34,21 @@ bool is_lle_module(SceSysmoduleModuleId module_id, HostState &host) {
         SCE_SYSMODULE_PGF,
         SCE_SYSMODULE_SYSTEM_GESTURE,
         SCE_SYSMODULE_XML,
-        // SCE_SYSMODULE_MP4, // Is not ready for now
+        SCE_SYSMODULE_MP4,
         SCE_SYSMODULE_ATRAC,
+        SCE_SYSMODULE_AVPLAYER,
         SCE_SYSMODULE_JSON,
     };
 
     if (have_paths) {
-        if (host.cfg.current_config.modules_mode != ModulesMode::MANUAL) {
+        if (emuenv.cfg.current_config.modules_mode != ModulesMode::MANUAL) {
             if (std::find(auto_lle_modules.begin(), auto_lle_modules.end(), module_id) != auto_lle_modules.end())
                 return true;
         }
 
-        if (host.cfg.current_config.modules_mode != ModulesMode::AUTOMATIC) {
+        if (emuenv.cfg.current_config.modules_mode != ModulesMode::AUTOMATIC) {
             for (auto path : paths) {
-                if (std::find(host.cfg.current_config.lle_modules.begin(), host.cfg.current_config.lle_modules.end(), path) != host.cfg.current_config.lle_modules.end())
+                if (std::find(emuenv.cfg.current_config.lle_modules.begin(), emuenv.cfg.current_config.lle_modules.end(), path) != emuenv.cfg.current_config.lle_modules.end())
                     return true;
             }
         }

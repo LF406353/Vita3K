@@ -1,8 +1,187 @@
 <?xml version="1.0" encoding="utf-8"?>
 
 <lang>
+	<main_menubar>
+		<file name="File">
+			<open_pref_path>Open Pref Path</open_pref_path>
+			<install_firmware>Install Firmware</install_firmware>
+			<install_pkg>Install .pkg</install_pkg>
+			<install_zip>Install .zip, .vpk</install_zip>
+			<install_license>Install License</install_license>
+		</file>
+		<emulation name="Emulation">
+			<last_apps_used>Last Apps used</last_apps_used>
+		</emulation>
+		<configuration name="Configuration">
+			<settings>Ustawienia</settings>
+			<user_management>Zarządzanie użytkownikami</user_management>
+		</configuration>
+		<controls name="Controls">
+			<keyboard_controls>Keyboard Controls</keyboard_controls>
+		</controls>
+		<help name="Help">
+			<welcome>Welcome</welcome>
+		</help>
+	</main_menubar>
+
+	<app_context>
+		<update_history>Historia aktualizacji</update_history>
+		<history_version>Wersja {}</history_version>
+		<information>Informacje</information>
+		<app_delete>Aplikacja i wszystkie powiązane dane, w tym zapisane dane, zostaną usunięte.</app_delete>
+		<save_delete>Czy chcesz usunąć te zapisane dane?</save_delete>
+		<eligible>Spełnia warunki</eligible>
+		<ineligible>Nie spełnia warunków</ineligible>
+		<level>Poziom</level>
+		<name>Nazwa</name>
+		<trophy_earning>Zdobywanie trofeów</trophy_earning>
+		<parental_Controls>kontrola rodzicielska</parental_Controls>
+		<updated>Zaktualizowano</updated>
+		<size>Rozmiar</size>
+		<version>Wersja</version>
+	</app_context>
+
+	<common>
+		<cancel>Anuluj</cancel>
+		<delete>Usuń</delete>
+		<no>Nie</no>
+		<select_all>Zaznacz wszystko</select_all>
+		<select>Zaznacz</select>
+		<please_wait>Czekaj...</please_wait>
+		<yes>Tak</yes>
+		<wday>
+			<day>niedziela</day>
+			<day>poniedziałek</day>
+			<day>wtorek</day>
+			<day>środa</day>
+			<day>czwartek</day>
+			<day>piątek</day>
+			<day>sobota</day>
+		</wday>
+		<ymonth>
+			<month>Styczeń</month>
+			<month>Luty</month>
+			<month>Marzec</month>
+			<month>Kwiecień</month>
+			<month>Maj</month>
+			<month>Czerwiec</month>
+			<month>Lipiec</month>
+			<month>Sierpień</month>
+			<month>Wrzesień</month>
+			<month>Październik</month>
+			<month>Listopad</month>
+			<month>Grudzień</month>
+		</ymonth>
+		<small_ymonth>
+			<month>styczeń</month>
+			<month>luty</month>
+			<month>marzec</month>
+			<month>kwiecień</month>
+			<month>maj</month>
+			<month>czerwiec</month>
+			<month>lipiec</month>
+			<month>sierpień</month>
+			<month>wrzesień</month>
+			<month>październik</month>
+			<month>listopad</month>
+			<month>grudzień</month>
+		</small_ymonth>
+		<mday>
+			<days></days>
+			<days>1</days>
+			<days>2</days>
+			<days>3</days>
+			<days>4</days>
+			<days>5</days>
+			<days>6</days>
+			<days>7</days>
+			<days>8</days>
+			<days>9</days>
+			<days>10</days>
+			<days>11</days>
+			<days>12</days>
+			<days>13</days>
+			<days>14</days>
+			<days>15</days>
+			<days>16</days>
+			<days>17</days>
+			<days>18</days>
+			<days>19</days>
+			<days>20</days>
+			<days>21</days>
+			<days>22</days>
+			<days>23</days>
+			<days>24</days>
+			<days>25</days>
+			<days>26</days>
+			<days>27</days>
+			<days>28</days>
+			<days>29</days>
+			<days>30</days>
+			<days>31</days>
+		</mday>
+		<small_mday>
+			<days></days>
+			<days>1</days>
+			<days>2</days>
+			<days>3</days>
+			<days>4</days>
+			<days>5</days>
+			<days>6</days>
+			<days>7</days>
+			<days>8</days>
+			<days>9</days>
+			<days>10</days>
+			<days>11</days>
+			<days>12</days>
+			<days>13</days>
+			<days>14</days>
+			<days>15</days>
+			<days>16</days>
+			<days>17</days>
+			<days>18</days>
+			<days>19</days>
+			<days>20</days>
+			<days>21</days>
+			<days>22</days>
+			<days>23</days>
+			<days>24</days>
+			<days>25</days>
+			<days>26</days>
+			<days>27</days>
+			<days>28</days>
+			<days>29</days>
+			<days>30</days>
+			<days>31</days>
+		</small_mday>
+		<hidden_trophy>Skjult trophy</hidden_trophy>
+		<one_hour_ago>1 godz. temu</one_hour_ago>
+		<one_minute_ago>1 min temu</one_minute_ago>
+		<bronze>Bronse</bronze>
+		<gold>Gull</gold>
+		<platinum>Platina</platinum>
+		<silver>Sølv</silver>
+		<hours_ago>{} godz. temu</hours_ago>
+		<minutes_ago>{} min temu</minutes_ago>
+	</common>
+
+	<content_manager name="Menedźer zawartości">
+		<application name="Aplikacje">
+			<delete>Wybrane aplikacje i wszystkie powiązane dane, w tym zapisane dane, zostaną usunięte.</delete>
+			<no_item>Bark elementów zawartości.</no_item>
+		</application>
+		<saved_data name="Zapisane dane">
+			<delete>Zaznaczone elementy zapisanych danych zostaną usunięte.</delete>
+			<no_saved_data>Bark zapisanych danych .</no_saved_data>
+		</saved_data>
+		<theme>Motyw</theme>
+		<free_space>Wolne miejsce</free_space>
+		<clear_all>wyczyść wszystko</clear_all>
+	</content_manager>
+	
 	<game_data>
 		<app_close>Następująca aplikacja zostanie zamknięta.</app_close>
+		<data_delete>Dane do usunięcia:</data_delete>
 	</game_data>
 
 	<initial_setup>
@@ -17,4 +196,98 @@ System Vita3K jest gotowy!</completed_setup>
 		<start>Rozpocznij</start>
 		<continue>Kontynuuj</continue>
 	</live_area>
+	
+	<settings name="Ustawienia">
+		<theme_background name="Motyw i tło">
+			<default>Domyślnie</default>
+			<theme name="Motyw">
+				<find_in_altervista>Znajdź w sklepie Altervista</find_in_altervista>
+				<information name="Informacje">
+					<name>Nazwa</name>
+					<provider>Dostawca</provider>
+					<updated>Zaktualizowano</updated>
+					<size>Rozmiar</size>
+					<version>Wersja</version>
+				</information>
+				<delete>Ten motyw zostanie usunięty.</delete>
+			</theme>
+			<start_screen name="Ekran startowy">
+				<image>Obraz</image>
+			</start_screen>
+			<home_screen_backgrounds name="Tło ekranu głównego">
+			</home_screen_backgrounds>
+		</theme_background>
+		<date_time name="Data i godzina">
+			<date_format name ="Format daty">
+				<yyyy_mm_dd>RRRR/MM/DD</yyyy_mm_dd>
+				<dd_mm_yyyy>DD/MM/RRRR</dd_mm_yyyy>
+				<mm_dd_yyyy>MM/DD/RRRR</mm_dd_yyyy>
+			</date_format>
+			<time_format name="Format godziny">
+				<clock_12_hour>Zegar 12-godz</clock_12_hour>
+				<clock_24_hour>Zegar 24-godz</clock_24_hour>
+			</time_format>
+		</date_time>
+		<language name="Język">
+			<system_language>Język systemu</system_language>
+			<input_language name="język wprowadzania">
+				<keyboards name="Klawiatury">
+					<ime_languages>
+						<lang id="1">Duński</lang>
+						<lang id="2">Niemiecki</lang>
+						<lang id="262144">Angielski (Wielka Brytania)</lang>
+						<lang id="4">Angielski (Stany Zjednoczone)</lang>
+						<lang id="8">Hiszpański</lang>
+						<lang id="16">Francuski</lang>
+						<lang id="32">Włoski</lang>
+						<lang id="64">Niderlandzki</lang>
+						<lang id="128">Norweski</lang>
+						<lang id="256">Polska</lang>
+						<lang id="131072">Portugalski (Brazylia)</lang>
+						<lang id="512">Portugalski (Portugalia)</lang>
+						<lang id="1024">Rosyjski</lang>
+						<lang id="2048">Fiński</lang>
+						<lang id="4096">Szwedzki</lang>
+						<lang id="524288">Turkish</lang>
+					</ime_languages>
+				</keyboards>
+			</input_language>
+		</language>
+	</settings>
+
+	<trophy_collection>
+		<details>Szczegóły</details>
+		<earned>Zdobyto</earned>
+		<name>Nazwa</name>
+		<no_trophies>Brak trofeów.
+Trofea można zdobywać, korzystając z aplikacji obsługującej funkcję trofeów.</no_trophies>
+		<not_earned>Nie zdobyto</not_earned>
+		<original>Oryginał</original>
+		<sort>Sortuj</sort>
+		<trophies>Trofea</trophies>
+		<grade>stopień</grade>
+		<progress>Postęp</progress>
+		<updated>Opdaterest</updated>
+	</trophy_collection>
+
+	<user_management>
+		<select_user>Select your user</select_user>
+		<create_user>Utwórz użytkownika</create_user>
+		<user_created>Został utworzony następujący użytkownik:</user_created>
+		<edit_user>Edit User</edit_user>
+		<user_name_used>Ta nazwa jest już używana.</user_name_used>
+		<delete_user>Usuń użytkownika</delete_user>
+		<user_delete>Wybierz użytkownika, którego chcesz usunąć.</user_delete>
+		<user_delete_msg>Następujący użytkownicy zostaną usunięci:</user_delete_msg>
+		<user_delete_message>Jeśli usuniesz użytkownika, usunięte jego zapisane dane, trofea.</user_delete_message>
+		<user_delete_warn>Użytkownik zostanie usunięty.
+Czy na pewno chcesz kontynuować?</user_delete_warn>
+		<user_deleted>Usunięto użytkownika.</user_deleted>
+		<change_avatar>Zmień awatara</change_avatar>
+		<reset_avatar>Reset Avatar</reset_avatar>
+		<name>Nazwa</name>
+		<user>Uzytkownik</user>
+		<confirm>Potwierdź</confirm>
+		<automatic_user_login>Automatic User Login</automatic_user_login>
+	</user_management>
 </lang>
